@@ -11,6 +11,7 @@ package com.example.shiftapp.domain
 data class Shift(
     val id: Long,
     val status: ShiftStatus,
+    val userId: Long,
 ) {
     /**
      * Submit a DRAFT shift.
