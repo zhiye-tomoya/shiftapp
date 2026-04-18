@@ -9,22 +9,13 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import kotlin.test.assertEquals
 
-/**
- * Pure unit test for [ShiftService.submitShift].
- *
- * - No Spring context, no database.
- * - [ShiftRepository] is mocked with MockK.
- * - Only the business rules are exercised:
- *     1. DRAFT         → can be submitted, becomes SUBMITTED.
- *     2. Non-DRAFT     → cannot be submitted, throws.
- */
 class ShiftServiceTest {
 
     private val shiftRepository: ShiftRepository = mockk()
     private val shiftService = ShiftService(shiftRepository)
 
     @Test
-    fun `DRAFTのシフトを提出するとSUBMITTEDになる`() {
+    fun should_change_status_to_submitted_when_draft_shift_is_submitted() {
         val shiftId = 1L
         every { shiftRepository.findById(shiftId) } returns Shift(shiftId, ShiftStatus.DRAFT)
         every { shiftRepository.save(any()) } answers { firstArg() }
@@ -35,12 +26,45 @@ class ShiftServiceTest {
     }
 
     @Test
-    fun `DRAFT以外のシフトを提出しようとすると例外が発生する`() {
+    fun should_throw_exception_when_submitting_non_draft_shift() {
         val shiftId = 2L
         every { shiftRepository.findById(shiftId) } returns Shift(shiftId, ShiftStatus.SUBMITTED)
 
         assertThrows<IllegalStateException> {
             shiftService.submitShift(shiftId)
         }
+    }
+
+    @Test
+    fun should_throw_exception_when_reapproving_already_approved_shift() {
+        val shift = Shift(1, ShiftStatus.APPROVED)
+        every { shiftRepository.findById(1) } returns shift
+
+        assertThrows<IllegalStateException> {
+            shiftService.approveShift(1)
+            
+        }
+    }
+
+    @Test
+    fun should_change_status_to_approved_when_submitted_shift_is_approved() {
+        val shift = Shift(1, ShiftStatus.SUBMITTED)
+        every { shiftRepository.findById(1) } returns shift
+        every { shiftRepository.save(any()) } answers { firstArg() }
+
+        val result = shiftService.approveShift(1)
+
+        assertEquals(ShiftStatus.APPROVED, result.status)
+    }
+
+    @Test
+    fun should_allow_rejecting_submitted_shift() {
+        val shift = Shift(1, ShiftStatus.SUBMITTED)
+        every { shiftRepository.findById(1) } returns shift
+        every { shiftRepository.save(any()) } answers { firstArg() }
+
+        val result = shiftService.rejectShift(1)
+
+        assertEquals(ShiftStatus.REJECTED, result.status)
     }
 }
