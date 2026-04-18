@@ -1,15 +1,17 @@
 package com.example.shiftapp.service
 
 import com.example.shiftapp.domain.Shift
-import com.example.shiftapp.domain.ShiftStatus
 import com.example.shiftapp.repository.ShiftRepository
 import org.springframework.stereotype.Service
 
 /**
- * TDD phase: this class exists ONLY so that [ShiftServiceTest] can compile.
+ * Thin service layer that orchestrates domain operations.
  *
- * The real behaviour of [submitShift] is intentionally left unimplemented —
- * the tests will drive the implementation in the next step (red → green).
+ * Business logic is encapsulated in the [Shift] domain model.
+ * This service is responsible for:
+ *  - Retrieving domain objects from the repository
+ *  - Delegating business operations to the domain model
+ *  - Persisting the results
  */
 @Service
 class ShiftService(
@@ -18,34 +20,42 @@ class ShiftService(
     /**
      * Submit a DRAFT shift.
      *
-     * Rules (see ShiftServiceTest):
-     *  - DRAFT           → becomes SUBMITTED and is persisted
-     *  - Any other state → IllegalStateException is thrown
+     * Retrieves the shift, delegates to domain logic, and persists the result.
+     *
+     * @throws IllegalStateException if shift not found or invalid state transition
      */
     fun submitShift(shiftId: Long): Shift {
         val shift = shiftRepository.findById(shiftId)
             ?: throw IllegalStateException("Shift not found: $shiftId")
-        check(shift.status == ShiftStatus.DRAFT) {
-            "Only DRAFT shifts can be submitted (was ${shift.status})"
-        }
-        return shiftRepository.save(shift.copy(status = ShiftStatus.SUBMITTED))
+        val submittedShift = shift.submit()
+        return shiftRepository.save(submittedShift)
     }
 
+    /**
+     * Approve a SUBMITTED shift.
+     *
+     * Retrieves the shift, delegates to domain logic, and persists the result.
+     *
+     * @throws IllegalStateException if shift not found or invalid state transition
+     */
     fun approveShift(shiftId: Long): Shift {
         val shift = shiftRepository.findById(shiftId)
             ?: throw IllegalStateException("Shift not found: $shiftId")
-        check(shift.status == ShiftStatus.SUBMITTED) {
-            "Only SUBMITTED shifts can be approved (was ${shift.status})"
-        }
-        return shiftRepository.save(shift.copy(status = ShiftStatus.APPROVED))
+        val approvedShift = shift.approve()
+        return shiftRepository.save(approvedShift)
     }
 
+    /**
+     * Reject a SUBMITTED shift.
+     *
+     * Retrieves the shift, delegates to domain logic, and persists the result.
+     *
+     * @throws IllegalStateException if shift not found or invalid state transition
+     */
     fun rejectShift(shiftId: Long): Shift {
         val shift = shiftRepository.findById(shiftId)
             ?: throw IllegalStateException("Shift not found: $shiftId")
-        check(shift.status == ShiftStatus.SUBMITTED) {
-            "Only SUBMITTED shifts can be rejected (was ${shift.status})"
-        }
-        return shiftRepository.save(shift.copy(status = ShiftStatus.REJECTED))
+        val rejectedShift = shift.reject()
+        return shiftRepository.save(rejectedShift)
     }
 }
