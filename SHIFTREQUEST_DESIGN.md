@@ -13,10 +13,16 @@ A rich domain model implementation of `ShiftRequest` following Domain-Driven Des
 ```kotlin
 enum class RequestStatus {
     PENDING,
-    APPROVED,
+    TARGET_APPROVED,  // Target user has approved, awaiting admin approval
+    ADMIN_APPROVED,   // Final approval by admin (swap is complete)
     REJECTED,
 }
 ```
+
+**2-Step Approval Flow:**
+
+1. Target user approves: PENDING → TARGET_APPROVED
+2. Admin approves: TARGET_APPROVED → ADMIN_APPROVED (final)
 
 #### ShiftRequest (Rich Domain Model)
 
@@ -36,17 +42,31 @@ data class ShiftRequest(
 
 #### approveByTargetUser()
 
-- Only PENDING requests can be approved
+- Only PENDING requests can be approved by target user
 - Throws `IllegalStateException` for invalid state transitions
 - Automatically transfers shift ownership to target user
-- Returns new immutable instance
+- Returns new immutable instance with TARGET_APPROVED status
 
 #### rejectByTargetUser()
 
-- Only PENDING requests can be rejected
+- Only PENDING requests can be rejected by target user
 - Throws `IllegalStateException` for invalid state transitions
 - Keeps shift ownership with requester
 - Returns new immutable instance
+
+#### approveByAdmin()
+
+- Only TARGET_APPROVED requests can be approved by admin (second step)
+- Throws `IllegalStateException` for invalid state transitions
+- Shift ownership remains with target user (already transferred)
+- Returns new immutable instance with ADMIN_APPROVED status (final)
+
+#### rejectByAdmin()
+
+- Only TARGET_APPROVED requests can be rejected by admin
+- Admin can reject even after target user approved
+- Throws `IllegalStateException` for invalid state transitions
+- Returns new immutable instance with REJECTED status
 
 ### 3. Design Principles Applied
 
@@ -71,18 +91,22 @@ data class Shift(
 
 ## Test Coverage
 
-All business rules are verified through comprehensive tests:
+All business rules are verified through comprehensive tests (13 tests total):
+
+**Target User Approval/Rejection:**
 
 1. ✅ New requests start as PENDING
-2. ✅ Target user can approve PENDING requests
+2. ✅ Target user can approve PENDING requests (→ TARGET_APPROVED)
 3. ✅ Target user can reject PENDING requests
-4. ✅ Cannot approve already APPROVED requests
+4. ✅ Cannot approve already TARGET_APPROVED requests
 5. ✅ Cannot approve already REJECTED requests
-6. ✅ Cannot reject already APPROVED requests
+6. ✅ Cannot reject already TARGET_APPROVED requests
 7. ✅ Cannot reject already REJECTED requests
 8. ✅ Approval transfers shift ownership to target user
 9. ✅ Rejection keeps shift ownership with requester
 10. ✅ Immutability is maintained (original objects unchanged)
+
+**Admin Approval/Rejection (2-Step):** 11. ✅ Admin can approve TARGET_APPROVED requests (→ ADMIN_APPROVED) 12. ✅ Admin cannot approve PENDING requests (must be TARGET_APPROVED first) 13. ✅ Admin can reject TARGET_APPROVED requests 14. ✅ Admin cannot reject PENDING requests (must be TARGET_APPROVED first)
 
 ## Usage Example
 
@@ -97,17 +121,37 @@ val request = ShiftRequest(
     status = RequestStatus.PENDING
 )
 
-// Target user approves the request
-val approvedRequest = request.approveByTargetUser()
-// Result: status = APPROVED, shift.userId = 200L
+// ===== 2-Step Approval Flow (Happy Path) =====
 
-// Target user rejects the request
-val rejectedRequest = request.rejectByTargetUser()
+// Step 1: Target user approves the request
+val targetApproved = request.approveByTargetUser()
+// Result: status = TARGET_APPROVED, shift.userId = 200L
+
+// Step 2: Admin approves the request (final step)
+val adminApproved = targetApproved.approveByAdmin()
+// Result: status = ADMIN_APPROVED, shift.userId = 200L
+// ✅ Shift swap is now complete!
+
+// ===== Alternative: Target user rejects =====
+
+val rejectedByTarget = request.rejectByTargetUser()
 // Result: status = REJECTED, shift.userId = 100L (unchanged)
 
-// Invalid transition (throws exception)
-approvedRequest.approveByTargetUser()
-// Throws: IllegalStateException("Only PENDING requests can be approved (was APPROVED)")
+// ===== Alternative: Admin rejects after target approval =====
+
+val targetApproved2 = request.approveByTargetUser()
+val rejectedByAdmin = targetApproved2.rejectByAdmin()
+// Result: status = REJECTED (admin can reject even after target approved)
+
+// ===== Invalid transitions (throw exceptions) =====
+
+// Cannot approve TARGET_APPROVED request as target user
+targetApproved.approveByTargetUser()
+// Throws: IllegalStateException("Only PENDING requests can be approved (was TARGET_APPROVED)")
+
+// Cannot admin-approve a PENDING request (target must approve first)
+request.approveByAdmin()
+// Throws: IllegalStateException("Only TARGET_APPROVED requests can be admin-approved (was PENDING)")
 ```
 
 ## Files Created/Modified

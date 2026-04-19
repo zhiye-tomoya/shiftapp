@@ -26,13 +26,14 @@ data class ShiftRequest(
     val status: RequestStatus,
 ) {
     /**
-     * Approve this request by the target user.
+     * Approve this request by the target user (first step in 2-step approval).
      *
      * Business rules:
-     * - Only PENDING requests can be approved
+     * - Only PENDING requests can be approved by target user
      * - Upon approval, shift ownership is transferred to the target user
+     * - Request moves to TARGET_APPROVED status (awaiting admin approval)
      *
-     * @return A new ShiftRequest instance with APPROVED status and updated shift ownership
+     * @return A new ShiftRequest instance with TARGET_APPROVED status and updated shift ownership
      * @throws IllegalStateException if the request is not in PENDING status
      */
     fun approveByTargetUser(): ShiftRequest {
@@ -44,7 +45,7 @@ data class ShiftRequest(
         val transferredShift = shift.copy(userId = targetUserId)
         
         return copy(
-            status = RequestStatus.APPROVED,
+            status = RequestStatus.TARGET_APPROVED,
             shift = transferredShift
         )
     }
@@ -62,6 +63,45 @@ data class ShiftRequest(
     fun rejectByTargetUser(): ShiftRequest {
         check(status == RequestStatus.PENDING) {
             "Only PENDING requests can be rejected (was $status)"
+        }
+        
+        return copy(status = RequestStatus.REJECTED)
+    }
+
+    /**
+     * Approve this request by an admin (second step in 2-step approval).
+     *
+     * Business rules:
+     * - Only TARGET_APPROVED requests can be admin-approved
+     * - This is the final approval step in the 2-step approval process
+     * - Shift ownership remains with the target user (already transferred)
+     * - Request moves to ADMIN_APPROVED status (final state)
+     *
+     * @return A new ShiftRequest instance with ADMIN_APPROVED status
+     * @throws IllegalStateException if the request is not in TARGET_APPROVED status
+     */
+    fun approveByAdmin(): ShiftRequest {
+        check(status == RequestStatus.TARGET_APPROVED) {
+            "Only TARGET_APPROVED requests can be admin-approved (was $status)"
+        }
+        
+        return copy(status = RequestStatus.ADMIN_APPROVED)
+    }
+
+    /**
+     * Reject this request by an admin.
+     *
+     * Business rules:
+     * - Only TARGET_APPROVED requests can be admin-rejected
+     * - Admin can reject even after target user approved
+     * - This prevents the shift swap from being finalized
+     *
+     * @return A new ShiftRequest instance with REJECTED status
+     * @throws IllegalStateException if the request is not in TARGET_APPROVED status
+     */
+    fun rejectByAdmin(): ShiftRequest {
+        check(status == RequestStatus.TARGET_APPROVED) {
+            "Only TARGET_APPROVED requests can be admin-rejected (was $status)"
         }
         
         return copy(status = RequestStatus.REJECTED)
