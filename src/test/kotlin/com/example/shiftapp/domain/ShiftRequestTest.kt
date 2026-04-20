@@ -235,4 +235,73 @@ class ShiftRequestTest {
 
         assertEquals("Only TARGET_APPROVED requests can be admin-rejected (was PENDING)", exception.message)
     }
+
+    // ===== Business Rule Validation Tests =====
+
+    @Test
+    fun `cannot create swap request for DRAFT shift`() {
+        val draftShift = Shift(id = 1L, status = ShiftStatus.DRAFT, userId = 100L)
+
+        val exception = assertThrows<IllegalArgumentException> {
+            ShiftRequest(
+                id = 1L,
+                shift = draftShift,
+                requesterId = 100L,
+                targetUserId = 200L,
+                status = RequestStatus.PENDING
+            )
+        }
+
+        assertEquals("Can only swap APPROVED shifts (was DRAFT)", exception.message)
+    }
+
+    @Test
+    fun `cannot create swap request for SUBMITTED shift`() {
+        val submittedShift = Shift(id = 1L, status = ShiftStatus.SUBMITTED, userId = 100L)
+
+        val exception = assertThrows<IllegalArgumentException> {
+            ShiftRequest(
+                id = 1L,
+                shift = submittedShift,
+                requesterId = 100L,
+                targetUserId = 200L,
+                status = RequestStatus.PENDING
+            )
+        }
+
+        assertEquals("Can only swap APPROVED shifts (was SUBMITTED)", exception.message)
+    }
+
+    @Test
+    fun `cannot create swap request for REJECTED shift`() {
+        val rejectedShift = Shift(id = 1L, status = ShiftStatus.REJECTED, userId = 100L)
+
+        val exception = assertThrows<IllegalArgumentException> {
+            ShiftRequest(
+                id = 1L,
+                shift = rejectedShift,
+                requesterId = 100L,
+                targetUserId = 200L,
+                status = RequestStatus.PENDING
+            )
+        }
+
+        assertEquals("Can only swap APPROVED shifts (was REJECTED)", exception.message)
+    }
+
+    @Test
+    fun `can create swap request for APPROVED shift`() {
+        val approvedShift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
+
+        val request = ShiftRequest(
+            id = 1L,
+            shift = approvedShift,
+            requesterId = 100L,
+            targetUserId = 200L,
+            status = RequestStatus.PENDING
+        )
+
+        assertEquals(ShiftStatus.APPROVED, request.shift.status)
+        assertEquals(RequestStatus.PENDING, request.status)
+    }
 }

@@ -25,6 +25,12 @@ data class ShiftRequest(
     val targetUserId: Long,
     val status: RequestStatus,
 ) {
+    init {
+        require(shift.status == ShiftStatus.APPROVED) {
+            "Can only swap APPROVED shifts (was ${shift.status})"
+        }
+    }
+
     /**
      * Approve this request by the target user (first step in 2-step approval).
      *
