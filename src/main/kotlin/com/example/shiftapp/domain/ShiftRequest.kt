@@ -29,6 +29,13 @@ data class ShiftRequest(
         require(shift.status == ShiftStatus.APPROVED) {
             "Can only swap APPROVED shifts (was ${shift.status})"
         }
+        // For PENDING requests, requester must own the shift
+        // For other statuses (TARGET_APPROVED, etc.), ownership may have already been transferred
+        if (status == RequestStatus.PENDING) {
+            require(shift.userId == requesterId) {
+                "Requester must be the shift owner (shift.userId=${shift.userId}, requesterId=$requesterId)"
+            }
+        }
     }
 
     /**

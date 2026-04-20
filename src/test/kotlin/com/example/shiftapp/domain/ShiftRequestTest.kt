@@ -304,4 +304,21 @@ class ShiftRequestTest {
         assertEquals(ShiftStatus.APPROVED, request.shift.status)
         assertEquals(RequestStatus.PENDING, request.status)
     }
+
+    @Test
+    fun `requester must be the shift owner`() {
+        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
+
+        val exception = assertThrows<IllegalArgumentException> {
+            ShiftRequest(
+                id = 1L,
+                shift = shift,
+                requesterId = 999L,  // Different user!
+                targetUserId = 200L,
+                status = RequestStatus.PENDING
+            )
+        }
+
+        assertEquals("Requester must be the shift owner (shift.userId=100, requesterId=999)", exception.message)
+    }
 }
