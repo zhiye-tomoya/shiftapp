@@ -183,3 +183,131 @@ request.approveByAdmin()
 ```
 
 All tests pass ✅
+
+Great questions! Let me answer both:
+
+## Question 1: About `shift.userId` at different approval stages
+
+I think you meant `shift.userId` (not `shift.id`). Based on the code, here's what happens:
+
+**At `RequestStatus.TARGET_APPROVED`:**
+
+- ✅ The `shift.userId` has **already been transferred** to the target user (the person accepting the shift)
+- This happens in the `approveByTargetUser()` method (line 58 of ShiftRequest.kt): `val transferredShift = shift.copy(userId = targetUserId)`
+- Your test correctly asserts this: `assertEquals(200L, result.shift.userId)` at line 51
+
+**At `RequestStatus.ADMIN_APPROVED`:**
+
+- The `shift.userId` **remains** with the target user (no further transfer)
+- The admin approval just finalizes the request status, ownership doesn't change
+- Your test correctly asserts this: `assertEquals(200L, result.shift.userId)` at line 91
+
+**However, there's a potential issue in your test setup!** At line 77-83 in `should_retrieve_approve_and_save_request_when_approved_by_admin()`, you're creating a shift with `userId = 100L` but status `TARGET_APPROVED`. This is inconsistent because once a request reaches `TARGET_APPROVED`, the shift ownership should already be `200L` (the target user).
+
+The test should probably initialize the shift with `userId = 200L` on line 77 to reflect that ownership was already transferred.
+
+## Question 2: Should `REJECTED` be split into `ADMIN_REJECTED` and `TARGET_REJECTED`?
+
+This is a great design consideration! Here are the tradeoffs:
+
+**Pros of splitting:**
+
+- ✅ Better auditing - immediately know who rejected just from the status
+- ✅ Could enable different business logic (e.g., "admin rejections require notification email")
+- ✅ More explicit state machine
+- ✅ Could help with different rollback logic (if you ever need to revert shift ownership based on who rejected)
+
+**Cons of splitting:**
+
+- ❌ More enum values to maintain
+- ❌ May complicate queries if you just want "all rejected requests regardless of who rejected"
+- ❌ Could track rejection source through other means (e.g., `rejectedBy` field)
+
+**My recommendation:** **Yes, split them.** Here's why:
+
+1. The two rejection paths have different contexts: `TARGET_REJECTED` means the target user declined to take the shift (ownership never transferred), while `ADMIN_REJECTED` means the target user agreed but admin vetoed (ownership may need to be rolled back)
+2. This distinction could be important for future features like notifications, analytics, or rollback logic
+3. The state machine becomes more explicit and easier to understand
+
+Would you like me to propose a refactoring plan to:
+
+1. Fix the test setup inconsistency?
+2. Split REJECTED into ADMIN_REJECTED and TARGET_REJECTED?
+
+Perfect choice! Option 2 is cleaner and simpler. Here's the detailed refactoring plan:
+
+## Refactoring Plan for Option 2
+
+### Changes Summary
+
+**Key principle:** Shift ownership **only transfers on final admin approval**, not on target approval.
+
+### 1. **RequestStatus.kt**
+
+```kotlin
+enum class RequestStatus {
+    PENDING,
+    TARGET_APPROVED,
+    ADMIN_APPROVED,
+    TARGET_REJECTED,  // NEW - Target user declined
+    ADMIN_REJECTED,   // NEW - Admin vetoed after target approved
+}
+```
+
+### 2. **ShiftRequest.kt - Domain Logic Changes**
+
+**`approveByTargetUser()`** (line 52-64)
+
+- **REMOVE** ownership transfer: ~~`val transferredShift = shift.copy(userId = targetUserId)`~~
+- Keep shift ownership unchanged (stays with requester)
+- Return `TARGET_APPROVED` status
+
+**`approveByAdmin()`** (line 96-102)
+
+- **ADD** ownership transfer: `val transferredShift = shift.copy(userId = targetUserId)`
+- Transfer shift to target user (this is when actual ownership changes!)
+- Return `ADMIN_APPROVED` status
+
+**`rejectByTargetUser()`** (line 76-82)
+
+- Change status from `REJECTED` → `TARGET_REJECTED`
+- No ownership change (already with requester)
+
+**`rejectByAdmin()`** (line 115-121)
+
+- Change status from `REJECTED` → `ADMIN_REJECTED`
+- No ownership change needed (still with requester since target approval didn't transfer it)
+
+### 3. **ShiftRequestService.kt**
+
+- Add `rejectByAdmin()` method (currently missing)
+
+### 4. **ShiftRequestServiceTest.kt**
+
+**Fix `should_retrieve_approve_and_save_request_when_approved_by_target_user()`** (line 36-54)
+
+- Line 51: Change assertion from `assertEquals(200L, result.shift.userId)`
+- To: `assertEquals(100L, result.shift.userId)` ← ownership stays with requester!
+
+**Fix `should_retrieve_approve_and_save_request_when_approved_by_admin()`** (line 76-94)
+
+- Line 77: Keep shift initialization with `userId = 100L` ← correct now!
+- Line 91: Change assertion to verify ownership DOES transfer here: `assertEquals(200L, result.shift.userId)`
+
+**Update `should_retrieve_reject_and_save_request_when_rejected_by_target_user()`** (line 56-74)
+
+- Line 70: Change from `REJECTED` → `TARGET_REJECTED`
+
+**Implement `should_retrieve_reject_and_save_request_when_rejected_by_admin()`** (line 96-98)
+
+- Create test with `TARGET_APPROVED` initial status
+- Verify status changes to `ADMIN_REJECTED`
+- Verify ownership stays with requester (100L)
+
+### 5. **ShiftRequestTest.kt (domain unit tests)**
+
+- Add tests for the domain logic changes
+
+---
+
+**Ready to implement?** Please **toggle to Act mode** and I'll make all these changes!

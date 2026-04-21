@@ -48,7 +48,7 @@ class ShiftRequestServiceTest {
         val result = shiftRequestService.approveByTargetUser(shiftRequest.id)
 
         assertEquals(RequestStatus.TARGET_APPROVED, result.status)
-        assertEquals(200L, result.shift.userId) // Shift ownership transferred to target user
+        assertEquals(100L, result.shift.userId) // Shift ownership stays with requester (not transferred yet)
         assertEquals(100L, result.requesterId) // Requester remains unchanged
         assertEquals(200L, result.targetUserId) // Target user remains unchanged
     }
@@ -67,18 +67,50 @@ class ShiftRequestServiceTest {
 
         val result = shiftRequestService.rejectByTargetUser(shiftRequest.id)
 
-        assertEquals(RequestStatus.REJECTED, result.status)
-        assertEquals(100L, result.shift.userId) 
+        assertEquals(RequestStatus.TARGET_REJECTED, result.status)
+        assertEquals(100L, result.shift.userId) // Ownership stays with requester
         assertEquals(100L, result.requesterId) 
         assertEquals(200L, result.targetUserId) 
     }
     @Test
     fun should_retrieve_approve_and_save_request_when_approved_by_admin() {
-        // Test implementation here
-    }            
+        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
+        val shiftRequest = ShiftRequest(
+            id = 1L,
+            shift = shift,
+            requesterId = shift.userId,
+            targetUserId = 200L,
+            status = RequestStatus.TARGET_APPROVED
+        )
+        every { shiftRequestRepository.findById(1L) } returns shiftRequest
+        every { shiftRequestRepository.save(any()) } answers { firstArg() } 
+
+        val result = shiftRequestService.approveByAdmin(shiftRequest.id)
+
+        assertEquals(RequestStatus.ADMIN_APPROVED, result.status) 
+        assertEquals(200L, result.shift.userId) // Ownership NOW transfers to target user on admin approval
+        assertEquals(100L, result.requesterId) 
+        assertEquals(200L, result.targetUserId)
+    }
     @Test
     fun should_retrieve_reject_and_save_request_when_rejected_by_admin() {
-        // Test implementation here
+        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
+        val shiftRequest = ShiftRequest(
+            id = 1L,
+            shift = shift,
+            requesterId = shift.userId,
+            targetUserId = 200L,
+            status = RequestStatus.TARGET_APPROVED
+        )
+        every { shiftRequestRepository.findById(1L) } returns shiftRequest
+        every { shiftRequestRepository.save(any()) } answers { firstArg() }
+
+        val result = shiftRequestService.rejectByAdmin(shiftRequest.id)
+
+        assertEquals(RequestStatus.ADMIN_REJECTED, result.status)
+        assertEquals(100L, result.shift.userId) // Ownership stays with requester (never transferred)
+        assertEquals(100L, result.requesterId)
+        assertEquals(200L, result.targetUserId)
     }
     @Test
     fun should_return_filtered_list_when_getting_requests_by_requester() {

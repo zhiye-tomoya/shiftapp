@@ -40,7 +40,7 @@ class ShiftRequestTest {
         val approvedRequest = request.approveByTargetUser()
 
         assertEquals(RequestStatus.TARGET_APPROVED, approvedRequest.status)
-        assertEquals(200L, approvedRequest.shift.userId, "Shift ownership should be transferred to target user")
+        assertEquals(100L, approvedRequest.shift.userId, "Shift ownership should stay with requester until admin approval")
     }
 
     @Test
@@ -56,7 +56,7 @@ class ShiftRequestTest {
 
         val rejectedRequest = request.rejectByTargetUser()
 
-        assertEquals(RequestStatus.REJECTED, rejectedRequest.status)
+        assertEquals(RequestStatus.TARGET_REJECTED, rejectedRequest.status)
         assertEquals(100L, rejectedRequest.shift.userId, "Shift ownership should remain with requester")
     }
 
@@ -79,21 +79,21 @@ class ShiftRequestTest {
     }
 
     @Test
-    fun `cannot approve an already REJECTED request`() {
+    fun `cannot approve an already TARGET_REJECTED request`() {
         val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
         val request = ShiftRequest(
             id = 1L,
             shift = shift,
             requesterId = 100L,
             targetUserId = 200L,
-            status = RequestStatus.REJECTED
+            status = RequestStatus.TARGET_REJECTED
         )
 
         val exception = assertThrows<IllegalStateException> {
             request.approveByTargetUser()
         }
 
-        assertEquals("Only PENDING requests can be approved (was REJECTED)", exception.message)
+        assertEquals("Only PENDING requests can be approved (was TARGET_REJECTED)", exception.message)
     }
 
     @Test
@@ -115,25 +115,25 @@ class ShiftRequestTest {
     }
 
     @Test
-    fun `cannot reject an already REJECTED request`() {
+    fun `cannot reject an already TARGET_REJECTED request`() {
         val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
         val request = ShiftRequest(
             id = 1L,
             shift = shift,
             requesterId = 100L,
             targetUserId = 200L,
-            status = RequestStatus.REJECTED
+            status = RequestStatus.TARGET_REJECTED
         )
 
         val exception = assertThrows<IllegalStateException> {
             request.rejectByTargetUser()
         }
 
-        assertEquals("Only PENDING requests can be rejected (was REJECTED)", exception.message)
+        assertEquals("Only PENDING requests can be rejected (was TARGET_REJECTED)", exception.message)
     }
 
     @Test
-    fun `approved request transfers shift ownership to target user`() {
+    fun `target approval does not transfer ownership yet`() {
         val originalShift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
         val request = ShiftRequest(
             id = 1L,
@@ -145,7 +145,7 @@ class ShiftRequestTest {
 
         val approvedRequest = request.approveByTargetUser()
 
-        assertEquals(200L, approvedRequest.shift.userId)
+        assertEquals(100L, approvedRequest.shift.userId, "Ownership stays with requester until admin approval")
         assertEquals(100L, originalShift.userId, "Original shift should remain unchanged (immutability)")
     }
 
@@ -168,8 +168,8 @@ class ShiftRequestTest {
     // ===== 2-Step Approval: Admin Approval Tests =====
 
     @Test
-    fun `admin can approve a TARGET_APPROVED request`() {
-        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 200L)
+    fun `admin can approve a TARGET_APPROVED request and ownership transfers`() {
+        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
         val request = ShiftRequest(
             id = 1L,
             shift = shift,
@@ -181,7 +181,7 @@ class ShiftRequestTest {
         val adminApprovedRequest = request.approveByAdmin()
 
         assertEquals(RequestStatus.ADMIN_APPROVED, adminApprovedRequest.status)
-        assertEquals(200L, adminApprovedRequest.shift.userId, "Shift ownership should remain with target user")
+        assertEquals(200L, adminApprovedRequest.shift.userId, "Shift ownership transfers to target user on admin approval")
     }
 
     @Test
@@ -203,8 +203,8 @@ class ShiftRequestTest {
     }
 
     @Test
-    fun `admin can reject a TARGET_APPROVED request`() {
-        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 200L)
+    fun `admin can reject a TARGET_APPROVED request and ownership stays with requester`() {
+        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
         val request = ShiftRequest(
             id = 1L,
             shift = shift,
@@ -215,7 +215,8 @@ class ShiftRequestTest {
 
         val rejectedRequest = request.rejectByAdmin()
 
-        assertEquals(RequestStatus.REJECTED, rejectedRequest.status)
+        assertEquals(RequestStatus.ADMIN_REJECTED, rejectedRequest.status)
+        assertEquals(100L, rejectedRequest.shift.userId, "Ownership stays with requester (never transferred)")
     }
 
     @Test

@@ -43,10 +43,10 @@ data class ShiftRequest(
      *
      * Business rules:
      * - Only PENDING requests can be approved by target user
-     * - Upon approval, shift ownership is transferred to the target user
+     * - Shift ownership is NOT transferred yet (awaits admin approval)
      * - Request moves to TARGET_APPROVED status (awaiting admin approval)
      *
-     * @return A new ShiftRequest instance with TARGET_APPROVED status and updated shift ownership
+     * @return A new ShiftRequest instance with TARGET_APPROVED status (ownership unchanged)
      * @throws IllegalStateException if the request is not in PENDING status
      */
     fun approveByTargetUser(): ShiftRequest {
@@ -54,23 +54,18 @@ data class ShiftRequest(
             "Only PENDING requests can be approved (was $status)"
         }
         
-        // Transfer shift ownership to target user
-        val transferredShift = shift.copy(userId = targetUserId)
-        
-        return copy(
-            status = RequestStatus.TARGET_APPROVED,
-            shift = transferredShift
-        )
+        // Ownership remains with requester until admin approval
+        return copy(status = RequestStatus.TARGET_APPROVED)
     }
 
     /**
      * Reject this request by the target user.
      *
      * Business rules:
-     * - Only PENDING requests can be rejected
+     * - Only PENDING requests can be rejected by target user
      * - Upon rejection, shift ownership remains with the requester
      *
-     * @return A new ShiftRequest instance with REJECTED status
+     * @return A new ShiftRequest instance with TARGET_REJECTED status
      * @throws IllegalStateException if the request is not in PENDING status
      */
     fun rejectByTargetUser(): ShiftRequest {
@@ -78,7 +73,7 @@ data class ShiftRequest(
             "Only PENDING requests can be rejected (was $status)"
         }
         
-        return copy(status = RequestStatus.REJECTED)
+        return copy(status = RequestStatus.TARGET_REJECTED)
     }
 
     /**
@@ -87,10 +82,10 @@ data class ShiftRequest(
      * Business rules:
      * - Only TARGET_APPROVED requests can be admin-approved
      * - This is the final approval step in the 2-step approval process
-     * - Shift ownership remains with the target user (already transferred)
+     * - Shift ownership is transferred to the target user upon admin approval
      * - Request moves to ADMIN_APPROVED status (final state)
      *
-     * @return A new ShiftRequest instance with ADMIN_APPROVED status
+     * @return A new ShiftRequest instance with ADMIN_APPROVED status and transferred ownership
      * @throws IllegalStateException if the request is not in TARGET_APPROVED status
      */
     fun approveByAdmin(): ShiftRequest {
@@ -98,7 +93,13 @@ data class ShiftRequest(
             "Only TARGET_APPROVED requests can be admin-approved (was $status)"
         }
         
-        return copy(status = RequestStatus.ADMIN_APPROVED)
+        // Transfer shift ownership to target user (final approval)
+        val transferredShift = shift.copy(userId = targetUserId)
+        
+        return copy(
+            status = RequestStatus.ADMIN_APPROVED,
+            shift = transferredShift
+        )
     }
 
     /**
@@ -107,9 +108,10 @@ data class ShiftRequest(
      * Business rules:
      * - Only TARGET_APPROVED requests can be admin-rejected
      * - Admin can reject even after target user approved
+     * - Shift ownership remains with requester (was never transferred)
      * - This prevents the shift swap from being finalized
      *
-     * @return A new ShiftRequest instance with REJECTED status
+     * @return A new ShiftRequest instance with ADMIN_REJECTED status
      * @throws IllegalStateException if the request is not in TARGET_APPROVED status
      */
     fun rejectByAdmin(): ShiftRequest {
@@ -117,6 +119,7 @@ data class ShiftRequest(
             "Only TARGET_APPROVED requests can be admin-rejected (was $status)"
         }
         
-        return copy(status = RequestStatus.REJECTED)
+        // No ownership change needed - ownership was never transferred
+        return copy(status = RequestStatus.ADMIN_REJECTED)
     }
 }
