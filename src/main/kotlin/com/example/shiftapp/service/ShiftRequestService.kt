@@ -30,4 +30,11 @@ class ShiftRequestService(
         val approvedRequest = request.approveByTargetUser()
         return shiftRequestRepository.save(approvedRequest)
     }
+
+    fun rejectByTargetUser(requestId: Long): ShiftRequest {
+        val request = shiftRequestRepository.findById(requestId) 
+            ?: throw IllegalArgumentException("Request not found")
+        val rejectedRequest = request.rejectByTargetUser()
+        return shiftRequestRepository.save(rejectedRequest)
+    }
 }

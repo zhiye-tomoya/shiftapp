@@ -34,7 +34,6 @@ class ShiftRequestServiceTest {
 
     @Test
     fun should_retrieve_approve_and_save_request_when_approved_by_target_user() {
-        // Given: A PENDING shift request with requester owning the shift
         val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
         val shiftRequest = ShiftRequest(
             id = 1L,
@@ -46,10 +45,8 @@ class ShiftRequestServiceTest {
         every { shiftRequestRepository.findById(1L) } returns shiftRequest
         every { shiftRequestRepository.save(any()) } answers { firstArg() }
 
-        // When: Target user approves the request
         val result = shiftRequestService.approveByTargetUser(shiftRequest.id)
 
-        // Then: Request status changes to TARGET_APPROVED and shift ownership transfers
         assertEquals(RequestStatus.TARGET_APPROVED, result.status)
         assertEquals(200L, result.shift.userId) // Shift ownership transferred to target user
         assertEquals(100L, result.requesterId) // Requester remains unchanged
@@ -57,7 +54,23 @@ class ShiftRequestServiceTest {
     }
     @Test
     fun should_retrieve_reject_and_save_request_when_rejected_by_target_user() {
-        // Test implementation here
+        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
+        val shiftRequest = ShiftRequest(
+            id =1L,
+            shift = shift,
+            requesterId = shift.userId,
+            targetUserId = 200L,
+            status = RequestStatus.PENDING
+        )
+        every { shiftRequestRepository.findById(1L) } returns shiftRequest
+        every { shiftRequestRepository.save(any()) } answers { firstArg() }
+
+        val result = shiftRequestService.rejectByTargetUser(shiftRequest.id)
+
+        assertEquals(RequestStatus.REJECTED, result.status)
+        assertEquals(100L, result.shift.userId) 
+        assertEquals(100L, result.requesterId) 
+        assertEquals(200L, result.targetUserId) 
     }
     @Test
     fun should_retrieve_approve_and_save_request_when_approved_by_admin() {
