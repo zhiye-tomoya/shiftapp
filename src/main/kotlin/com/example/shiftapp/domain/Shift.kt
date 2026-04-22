@@ -1,16 +1,25 @@
 package com.example.shiftapp.domain
 
+import jakarta.persistence.*
+
 /**
  * Shift aggregate with rich domain model behavior.
  *
  * Business logic for state transitions is encapsulated within this domain model.
- * No persistence annotations are applied here — JPA/DB integration is
- * intentionally deferred until after the core business rules are proven
- * out with unit tests.
+ * JPA annotations added for persistence, but domain logic remains unchanged.
  */
+@Entity
+@Table(name = "shifts")
 data class Shift(
-    val id: Long,
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    val id: Long = 0L,
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     val status: ShiftStatus,
+
+    @Column(name = "user_id", nullable = false)
     val userId: Long,
 ) {
     /**

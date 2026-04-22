@@ -1,18 +1,30 @@
 package com.example.shiftapp.repository
 
 import com.example.shiftapp.domain.Shift
+import com.example.shiftapp.domain.ShiftStatus
+import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.stereotype.Repository
 
 /**
- * Abstraction over Shift persistence.
+ * Spring Data JPA repository for Shift persistence.
  *
- * Defined as a plain interface (not Spring Data) so that:
- *   - the service layer depends only on a simple port, and
- *   - unit tests can mock it with MockK without any Spring / JPA setup.
+ * Extends JpaRepository to get built-in CRUD operations:
+ *   - findById(id): Optional<Shift>
+ *   - save(shift): Shift
+ *   - findAll(): List<Shift>
+ *   - deleteById(id): void
+ *   - and more...
  *
- * A real implementation (JPA, JDBC, in-memory, etc.) will be added in a
- * later phase.
+ * Custom query methods are derived from method names.
  */
-interface ShiftRepository {
-    fun findById(id: Long): Shift?
-    fun save(shift: Shift): Shift
+@Repository
+interface ShiftRepository : JpaRepository<Shift, Long> {
+    // Custom query methods can be added here
+    // Spring Data JPA automatically implements them based on method names
+
+    // Example: Find all shifts for a specific user
+    fun findAllByUserId(userId: Long): List<Shift>
+
+    // Example: Find all shifts with a specific status
+    fun findAllByStatus(status: ShiftStatus): List<Shift>
 }

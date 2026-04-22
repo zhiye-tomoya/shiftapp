@@ -26,7 +26,7 @@ class ShiftService(
      */
     fun submitShift(shiftId: Long): Shift {
         val shift = shiftRepository.findById(shiftId)
-            ?: throw IllegalStateException("Shift not found: $shiftId")
+            .orElseThrow { IllegalStateException("Shift not found: $shiftId") }
         val submittedShift = shift.submit()
         return shiftRepository.save(submittedShift)
     }
@@ -40,7 +40,7 @@ class ShiftService(
      */
     fun approveShift(shiftId: Long): Shift {
         val shift = shiftRepository.findById(shiftId)
-            ?: throw IllegalStateException("Shift not found: $shiftId")
+            .orElseThrow { IllegalStateException("Shift not found: $shiftId") }
         val approvedShift = shift.approve()
         return shiftRepository.save(approvedShift)
     }
@@ -54,7 +54,7 @@ class ShiftService(
      */
     fun rejectShift(shiftId: Long): Shift {
         val shift = shiftRepository.findById(shiftId)
-            ?: throw IllegalStateException("Shift not found: $shiftId")
+            .orElseThrow { IllegalStateException("Shift not found: $shiftId") }
         val rejectedShift = shift.reject()
         return shiftRepository.save(rejectedShift)
     }

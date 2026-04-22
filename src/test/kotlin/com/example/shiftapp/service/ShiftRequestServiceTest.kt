@@ -11,6 +11,7 @@ import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import java.util.Optional
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -23,7 +24,7 @@ class ShiftRequestServiceTest {
     @Test
     fun should_create_and_save_new_request_when_create_request_is_called() {
         val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
-        every { shiftRepository.findById(1L) } returns shift
+        every { shiftRepository.findById(1L) } returns Optional.of(shift)
         every { shiftRequestRepository.save(any()) } answers { firstArg() }
 
         val result = shiftRequestService.createRequest(requesterId = shift.userId, shiftId = 1L, targetUserId = 300L)
@@ -44,7 +45,7 @@ class ShiftRequestServiceTest {
             targetUserId = 200L,
             status = RequestStatus.PENDING
         )
-        every { shiftRequestRepository.findById(1L) } returns shiftRequest
+        every { shiftRequestRepository.findById(1L) } returns Optional.of(shiftRequest)
         every { shiftRequestRepository.save(any()) } answers { firstArg() }
 
         val result = shiftRequestService.approveByTargetUser(shiftRequest.id)
@@ -65,7 +66,7 @@ class ShiftRequestServiceTest {
             targetUserId = 200L,
             status = RequestStatus.PENDING
         )
-        every { shiftRequestRepository.findById(1L) } returns shiftRequest
+        every { shiftRequestRepository.findById(1L) } returns Optional.of(shiftRequest)
         every { shiftRequestRepository.save(any()) } answers { firstArg() }
 
         val result = shiftRequestService.rejectByTargetUser(shiftRequest.id)
@@ -86,12 +87,12 @@ class ShiftRequestServiceTest {
             targetUserId = 200L,
             status = RequestStatus.TARGET_APPROVED
         )
-        every { shiftRequestRepository.findById(1L) } returns shiftRequest
+        every { shiftRequestRepository.findById(1L) } returns Optional.of(shiftRequest)
         every { shiftRequestRepository.save(any()) } answers { firstArg() } 
 
         val result = shiftRequestService.approveByAdmin(shiftRequest.id)
 
-        assertEquals(RequestStatus.ADMIN_APPROVED, result.status) 
+        assertEquals(RequestStatus.ADMIN_APPROVED, result.status)
         assertEquals(200L, result.shift.userId) // Ownership NOW transfers to target user on admin approval
         assertEquals(100L, result.requesterId) 
         assertEquals(200L, result.targetUserId)
@@ -107,7 +108,7 @@ class ShiftRequestServiceTest {
             targetUserId = 200L,
             status = RequestStatus.TARGET_APPROVED
         )
-        every { shiftRequestRepository.findById(1L) } returns shiftRequest
+        every { shiftRequestRepository.findById(1L) } returns Optional.of(shiftRequest)
         every { shiftRequestRepository.save(any()) } answers { firstArg() }
 
         val result = shiftRequestService.rejectByAdmin(shiftRequest.id)
@@ -238,7 +239,7 @@ class ShiftRequestServiceTest {
     @Test
     fun should_throw_exception_when_request_is_not_found() {
         // Given: Request does not exist
-        every { shiftRequestRepository.findById(999L) } returns null
+        every { shiftRequestRepository.findById(999L) } returns Optional.empty()
 
         // When/Then: All approval/rejection methods should throw exception
         val exception1 = assertThrows<IllegalArgumentException> {
@@ -268,7 +269,7 @@ class ShiftRequestServiceTest {
     @Test
     fun should_throw_exception_when_shift_is_not_found_during_request_creation() {
         // Given: Shift does not exist
-        every { shiftRepository.findById(777L) } returns null
+        every { shiftRepository.findById(777L) } returns Optional.empty()
 
         // When/Then: Should throw exception when creating request with non-existent shift
         val exception = assertThrows<IllegalArgumentException> {

@@ -2,21 +2,29 @@ package com.example.shiftapp.repository
 
 import com.example.shiftapp.domain.ShiftRequest
 import com.example.shiftapp.domain.RequestStatus
+import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.stereotype.Repository
 
 /**
- * Abstraction over ShiftRequest persistence.
+ * Spring Data JPA repository for ShiftRequest persistence.
  *
- * Defined as a plain interface (not Spring Data) so that:
- *   - the service layer depends only on a simple port, and
- *   - unit tests can mock it with MockK without any Spring / JPA setup.
- *
- * A real implementation (JPA, JDBC, in-memory, etc.) will be added in a
- * later phase.
+ * Extends JpaRepository to get built-in CRUD operations.
+ * Custom query methods are derived from method names following Spring Data conventions.
  */
-interface ShiftRequestRepository {
-    fun findById(id: Long): ShiftRequest?
-    fun save(shiftRequest: ShiftRequest): ShiftRequest
-    fun findAllByRequesterId(requesterId: Long): List<ShiftRequest> 
+@Repository
+interface ShiftRequestRepository : JpaRepository<ShiftRequest, Long> {
+    /**
+     * Find all requests created by a specific requester.
+     */
+    fun findAllByRequesterId(requesterId: Long): List<ShiftRequest>
+
+    /**
+     * Find all requests targeted at a specific user.
+     */
     fun findAllByTargetUserId(targetUserId: Long): List<ShiftRequest>
-    fun findAllByStatus(status: RequestStatus): List<ShiftRequest> 
+
+    /**
+     * Find all requests with a specific status.
+     */
+    fun findAllByStatus(status: RequestStatus): List<ShiftRequest>
 }

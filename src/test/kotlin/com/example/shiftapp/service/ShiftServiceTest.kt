@@ -7,6 +7,7 @@ import io.mockk.every
 import io.mockk.mockk
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import java.util.Optional
 import kotlin.test.assertEquals
 
 class ShiftServiceTest {
@@ -17,7 +18,7 @@ class ShiftServiceTest {
     @Test
     fun should_change_status_to_submitted_when_draft_shift_is_submitted() {
         val shiftId = 1L
-        every { shiftRepository.findById(shiftId) } returns Shift(shiftId, ShiftStatus.DRAFT, userId = 100L)
+        every { shiftRepository.findById(shiftId) } returns Optional.of(Shift(shiftId, ShiftStatus.DRAFT, userId = 100L))
         every { shiftRepository.save(any()) } answers { firstArg() }
 
         val result = shiftService.submitShift(shiftId)
@@ -28,7 +29,7 @@ class ShiftServiceTest {
     @Test
     fun should_throw_exception_when_submitting_non_draft_shift() {
         val shiftId = 2L
-        every { shiftRepository.findById(shiftId) } returns Shift(shiftId, ShiftStatus.SUBMITTED, userId = 100L)
+        every { shiftRepository.findById(shiftId) } returns Optional.of(Shift(shiftId, ShiftStatus.SUBMITTED, userId = 100L))
 
         assertThrows<IllegalStateException> {
             shiftService.submitShift(shiftId)
@@ -38,7 +39,7 @@ class ShiftServiceTest {
     @Test
     fun should_throw_exception_when_reapproving_already_approved_shift() {
         val shift = Shift(1, ShiftStatus.APPROVED, userId = 100L)
-        every { shiftRepository.findById(1) } returns shift
+        every { shiftRepository.findById(1) } returns Optional.of(shift)
 
         assertThrows<IllegalStateException> {
             shiftService.approveShift(1)
@@ -49,7 +50,7 @@ class ShiftServiceTest {
     @Test
     fun should_change_status_to_approved_when_submitted_shift_is_approved() {
         val shift = Shift(1, ShiftStatus.SUBMITTED, userId = 100L)
-        every { shiftRepository.findById(1) } returns shift
+        every { shiftRepository.findById(1) } returns Optional.of(shift)
         every { shiftRepository.save(any()) } answers { firstArg() }
 
         val result = shiftService.approveShift(1)
@@ -60,7 +61,7 @@ class ShiftServiceTest {
     @Test
     fun should_allow_rejecting_submitted_shift() {
         val shift = Shift(1, ShiftStatus.SUBMITTED, userId = 100L)
-        every { shiftRepository.findById(1) } returns shift
+        every { shiftRepository.findById(1) } returns Optional.of(shift)
         every { shiftRepository.save(any()) } answers { firstArg() }
 
         val result = shiftService.rejectShift(1)

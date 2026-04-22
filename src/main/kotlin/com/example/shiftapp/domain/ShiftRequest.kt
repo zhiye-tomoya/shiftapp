@@ -1,5 +1,7 @@
 package com.example.shiftapp.domain
 
+import jakarta.persistence.*
+
 /**
  * ShiftRequest aggregate with rich domain model behavior.
  *
@@ -7,22 +9,27 @@ package com.example.shiftapp.domain
  * Business logic for approving/rejecting requests and transferring shift ownership
  * is encapsulated within this domain model.
  *
- * Following DDD principles:
- * - Business rules are enforced in the domain, NOT in the service layer
- * - State transitions are immutable (returns new instances)
- * - Invalid operations throw exceptions
- *
- * @property id Unique identifier for this request
- * @property shift The shift being requested for swap
- * @property requesterId User ID of the person requesting to give up the shift
- * @property targetUserId User ID of the person being asked to take the shift
- * @property status Current status of the request
+ * JPA annotations added for persistence, but domain logic remains unchanged.
  */
+@Entity
+@Table(name = "shift_requests")
 data class ShiftRequest(
-    val id: Long,
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    val id: Long = 0L,
+
+    @ManyToOne(fetch = FetchType.EAGER, cascade = [CascadeType.ALL])
+    @JoinColumn(name = "shift_id", nullable = false)
     val shift: Shift,
+
+    @Column(name = "requester_id", nullable = false)
     val requesterId: Long,
+
+    @Column(name = "target_user_id", nullable = false)
     val targetUserId: Long,
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     val status: RequestStatus,
 ) {
     init {
