@@ -1,6 +1,7 @@
 plugins {
 	kotlin("jvm") version "1.9.25"
 	kotlin("plugin.spring") version "1.9.25"
+	kotlin("plugin.jpa") version "1.9.25"  // 🆕 ADD THIS
 	id("org.springframework.boot") version "3.5.14-SNAPSHOT"
 	id("io.spring.dependency-management") version "1.1.7"
 }
@@ -20,22 +21,26 @@ repositories {
 }
 
 // ---------------------------------------------------------------------------
-// TDD phase: minimal dependencies for Service-layer unit tests only.
+// Phase 3: Database Persistence Layer
 //
-// Intentionally EXCLUDED (re-enable later when those layers are introduced):
-//   - spring-boot-starter-data-jpa  (no DB in TDD phase)
-//   - spring-boot-starter-security  (no security in TDD phase)
-//   - spring-boot-starter-web       (no controllers / web layer yet)
-//   - org.postgresql:postgresql     (no DB in TDD phase)
-//   - spring-security-test          (no security to test)
-//   - kotlin("plugin.jpa") + allOpen(JPA annotations) — not needed without JPA
+// Added dependencies:
+//   - spring-boot-starter-data-jpa  (JPA support)
+//   - org.postgresql:postgresql     (PostgreSQL driver)
+//   - com.h2database:h2             (In-memory DB for tests)
+//
+// Still EXCLUDED (will be added in later phases):
+//   - spring-boot-starter-security  (no security yet - Phase 4)
+//   - spring-boot-starter-web       (no controllers yet - Phase 4)
+//   - spring-security-test          (no security to test yet - Phase 4)
 // ---------------------------------------------------------------------------
 dependencies {
-	// Core Spring Boot (DI, logging, config). Kept minimal so services can be
-	// wired with @Service / constructor injection if desired, but unit tests
-	// do NOT need to bootstrap a Spring context.
+	// Core Spring Boot (DI, logging, config)
 	implementation("org.springframework.boot:spring-boot-starter")
 	implementation("org.springframework.boot:spring-boot-starter-validation")
+
+	// 🆕 Phase 3: JPA and Database support
+	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+	runtimeOnly("org.postgresql:postgresql")
 
 	implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
 	implementation("org.jetbrains.kotlin:kotlin-reflect")
@@ -43,6 +48,7 @@ dependencies {
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
 	testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
 	testImplementation("io.mockk:mockk:1.13.8")
+	testImplementation("com.h2database:h2")  // 🆕 In-memory DB for integration tests
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -50,6 +56,12 @@ kotlin {
 	compilerOptions {
 		freeCompilerArgs.addAll("-Xjsr305=strict")
 	}
+}
+
+allOpen {
+	annotation("jakarta.persistence.Entity")
+	annotation("jakarta.persistence.MappedSuperclass")
+	annotation("jakarta.persistence.Embeddable")
 }
 
 tasks.withType<Test> {
