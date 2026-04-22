@@ -27,16 +27,17 @@ repositories {
 //   - spring-boot-starter-data-jpa  (JPA support)
 //   - org.postgresql:postgresql     (PostgreSQL driver)
 //   - com.h2database:h2             (In-memory DB for tests)
+//   - spring-boot-starter-web       (Web/REST support)
 //
 // Still EXCLUDED (will be added in later phases):
 //   - spring-boot-starter-security  (no security yet - Phase 4)
-//   - spring-boot-starter-web       (no controllers yet - Phase 4)
 //   - spring-security-test          (no security to test yet - Phase 4)
 // ---------------------------------------------------------------------------
 dependencies {
 	// Core Spring Boot (DI, logging, config)
 	implementation("org.springframework.boot:spring-boot-starter")
 	implementation("org.springframework.boot:spring-boot-starter-validation")
+	implementation("org.springframework.boot:spring-boot-starter-web")
 
 	// 🆕 Phase 3: JPA and Database support
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
