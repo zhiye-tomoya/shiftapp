@@ -15,4 +15,6 @@ import com.example.shiftapp.domain.ShiftRequest
 interface ShiftRequestRepository {
     fun findById(id: Long): ShiftRequest?
     fun save(shiftRequest: ShiftRequest): ShiftRequest
+    fun findAllByRequesterId(requesterId: Long): List<ShiftRequest> 
+
 }

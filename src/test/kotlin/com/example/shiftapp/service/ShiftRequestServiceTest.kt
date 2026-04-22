@@ -48,10 +48,11 @@ class ShiftRequestServiceTest {
         val result = shiftRequestService.approveByTargetUser(shiftRequest.id)
 
         assertEquals(RequestStatus.TARGET_APPROVED, result.status)
-        assertEquals(100L, result.shift.userId) // Shift ownership stays with requester (not transferred yet)
+        assertEquals(100L, result.shift.userId) // Shift ownership stays with requester (not transferred yet
         assertEquals(100L, result.requesterId) // Requester remains unchanged
         assertEquals(200L, result.targetUserId) // Target user remains unchanged
     }
+
     @Test
     fun should_retrieve_reject_and_save_request_when_rejected_by_target_user() {
         val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
@@ -72,6 +73,7 @@ class ShiftRequestServiceTest {
         assertEquals(100L, result.requesterId) 
         assertEquals(200L, result.targetUserId) 
     }
+
     @Test
     fun should_retrieve_approve_and_save_request_when_approved_by_admin() {
         val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
@@ -92,6 +94,7 @@ class ShiftRequestServiceTest {
         assertEquals(100L, result.requesterId) 
         assertEquals(200L, result.targetUserId)
     }
+
     @Test
     fun should_retrieve_reject_and_save_request_when_rejected_by_admin() {
         val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
@@ -112,18 +115,32 @@ class ShiftRequestServiceTest {
         assertEquals(100L, result.requesterId)
         assertEquals(200L, result.targetUserId)
     }
+
     @Test
     fun should_return_filtered_list_when_getting_requests_by_requester() {
-        // Test implementation here
+        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
+        val request1 = ShiftRequest(id = 1L, shift = shift, requesterId = 100L, targetUserId = 200L, status = RequestStatus.PENDING)
+        val request2 = ShiftRequest(id = 2L, shift = shift, requesterId = 100L, targetUserId = 300L, status = RequestStatus.PENDING)
+
+        every { shiftRequestRepository.findAllByRequesterId(100L) } returns listOf(request1, request2)
+
+        val result = shiftRequestService.getRequestsByRequester(100L)
+
+        assertEquals(2, result.size)
+        assertEquals(100L, result[0].requesterId)
+        assertEquals(100L, result[1].requesterId)
     }
+
     @Test
     fun should_return_filtered_list_when_getting_requests_by_target_user() {
         // Test implementation here
     }
+
     @Test
     fun should_return_filtered_list_when_getting_requests_by_status() {
         // Test implementation here
     }
+    
     @Test
     fun should_throw_exception_when_request_is_not_found() {
         // Test implementation here

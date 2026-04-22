@@ -51,4 +51,8 @@ class ShiftRequestService(
         val rejectedRequest = request.rejectByAdmin()
         return shiftRequestRepository.save(rejectedRequest)
     }
+
+    fun getRequestsByRequester(requesterId: Long): List<ShiftRequest> {
+        return shiftRequestRepository.findAllByRequesterId(requesterId)
+    }
 }
