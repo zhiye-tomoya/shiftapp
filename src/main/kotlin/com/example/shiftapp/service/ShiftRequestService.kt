@@ -55,4 +55,13 @@ class ShiftRequestService(
     fun getRequestsByRequester(requesterId: Long): List<ShiftRequest> {
         return shiftRequestRepository.findAllByRequesterId(requesterId)
     }
+
+    fun getRequestsByTargetUser(targetUserId: Long): List<ShiftRequest> {
+        return shiftRequestRepository.findAllByTargetUserId(targetUserId)
+    }
+
+
+    fun getRequestsByStatus(status: RequestStatus): List<ShiftRequest> {
+        return shiftRequestRepository.findAllByStatus(status)
+    }
 }

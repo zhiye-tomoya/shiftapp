@@ -1,6 +1,7 @@
 package com.example.shiftapp.repository
 
 import com.example.shiftapp.domain.ShiftRequest
+import com.example.shiftapp.domain.RequestStatus
 
 /**
  * Abstraction over ShiftRequest persistence.
@@ -16,5 +17,6 @@ interface ShiftRequestRepository {
     fun findById(id: Long): ShiftRequest?
     fun save(shiftRequest: ShiftRequest): ShiftRequest
     fun findAllByRequesterId(requesterId: Long): List<ShiftRequest> 
-
+    fun findAllByTargetUserId(targetUserId: Long): List<ShiftRequest>
+    fun findAllByStatus(status: RequestStatus): List<ShiftRequest> 
 }
