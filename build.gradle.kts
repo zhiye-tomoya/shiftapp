@@ -21,17 +21,13 @@ repositories {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 3: Database Persistence Layer
+// Phase 4: REST API + Security Layer
 //
 // Added dependencies:
-//   - spring-boot-starter-data-jpa  (JPA support)
-//   - org.postgresql:postgresql     (PostgreSQL driver)
-//   - com.h2database:h2             (In-memory DB for tests)
-//   - spring-boot-starter-web       (Web/REST support)
-//
-// Still EXCLUDED (will be added in later phases):
-//   - spring-boot-starter-security  (no security yet - Phase 4)
-//   - spring-security-test          (no security to test yet - Phase 4)
+//   - spring-boot-starter-security   (Spring Security framework)
+//   - jjwt-*                         (JWT token generation/validation)
+//   - springdoc-openapi              (Swagger/OpenAPI documentation)
+//   - spring-security-test           (Security testing utilities)
 // ---------------------------------------------------------------------------
 dependencies {
 	// Core Spring Boot (DI, logging, config)
@@ -39,9 +35,18 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-validation")
 	implementation("org.springframework.boot:spring-boot-starter-web")
 
-	// 🆕 Phase 3: JPA and Database support
+	// Phase 3: JPA and Database support
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 	runtimeOnly("org.postgresql:postgresql")
+
+	// Phase 4: Security
+	implementation("org.springframework.boot:spring-boot-starter-security")
+	implementation("io.jsonwebtoken:jjwt-api:0.12.3")
+	runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.3")
+	runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.3")
+
+	// Phase 4: API Documentation
+	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.3.0")
 
 	implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
 	implementation("org.jetbrains.kotlin:kotlin-reflect")
@@ -49,7 +54,8 @@ dependencies {
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
 	testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
 	testImplementation("io.mockk:mockk:1.13.8")
-	testImplementation("com.h2database:h2")  // 🆕 In-memory DB for integration tests
+	testImplementation("com.h2database:h2")  // In-memory DB for integration tests
+	testImplementation("org.springframework.security:spring-security-test")  // Phase 4: Security testing
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

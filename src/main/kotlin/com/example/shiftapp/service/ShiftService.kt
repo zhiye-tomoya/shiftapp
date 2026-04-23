@@ -18,6 +18,30 @@ class ShiftService(
     private val shiftRepository: ShiftRepository,
 ) {
     /**
+     * Create a new shift in DRAFT status.
+     */
+    fun createShift(shift: Shift): Shift {
+        return shiftRepository.save(shift)
+    }
+
+    /**
+     * Get a shift by ID.
+     *
+     * @throws IllegalStateException if shift not found
+     */
+    fun getShiftById(shiftId: Long): Shift {
+        return shiftRepository.findById(shiftId)
+            .orElseThrow { IllegalStateException("Shift not found: $shiftId") }
+    }
+
+    /**
+     * Get all shifts for a specific user.
+     */
+    fun getShiftsByUserId(userId: Long): List<Shift> {
+        return shiftRepository.findAllByUserId(userId)
+    }
+
+    /**
      * Submit a DRAFT shift.
      *
      * Retrieves the shift, delegates to domain logic, and persists the result.
