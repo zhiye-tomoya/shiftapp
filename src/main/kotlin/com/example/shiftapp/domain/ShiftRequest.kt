@@ -18,7 +18,7 @@ data class ShiftRequest(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long = 0L,
 
-    @ManyToOne(fetch = FetchType.EAGER, cascade = [CascadeType.ALL])
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "shift_id", nullable = false)
     val shift: Shift,
 
@@ -89,24 +89,20 @@ data class ShiftRequest(
      * Business rules:
      * - Only TARGET_APPROVED requests can be admin-approved
      * - This is the final approval step in the 2-step approval process
-     * - Shift ownership is transferred to the target user upon admin approval
      * - Request moves to ADMIN_APPROVED status (final state)
      *
-     * @return A new ShiftRequest instance with ADMIN_APPROVED status and transferred ownership
+     * Note: Shift ownership transfer is handled by the service layer,
+     * as it requires separate persistence operations.
+     *
+     * @return A new ShiftRequest instance with ADMIN_APPROVED status
      * @throws IllegalStateException if the request is not in TARGET_APPROVED status
      */
     fun approveByAdmin(): ShiftRequest {
         check(status == RequestStatus.TARGET_APPROVED) {
             "Only TARGET_APPROVED requests can be admin-approved (was $status)"
         }
-        
-        // Transfer shift ownership to target user (final approval)
-        val transferredShift = shift.copy(userId = targetUserId)
-        
-        return copy(
-            status = RequestStatus.ADMIN_APPROVED,
-            shift = transferredShift
-        )
+
+        return copy(status = RequestStatus.ADMIN_APPROVED)
     }
 
     /**

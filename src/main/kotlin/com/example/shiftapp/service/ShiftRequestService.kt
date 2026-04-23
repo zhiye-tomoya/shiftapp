@@ -35,7 +35,16 @@ class ShiftRequestService(
     fun approveByAdmin(requestId: Long): ShiftRequest {
         val request = shiftRequestRepository.findById(requestId)
             .orElseThrow { IllegalArgumentException("Request not found") }
+
+        // Approve the request (changes status to ADMIN_APPROVED)
         val approvedRequest = request.approveByAdmin()
+
+        // Transfer shift ownership to target user
+        val shift = request.shift
+        val transferredShift = shift.copy(userId = request.targetUserId)
+        shiftRepository.save(transferredShift)
+
+        // Save the approved request
         return shiftRequestRepository.save(approvedRequest)
     }
 
