@@ -15,6 +15,7 @@ import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import java.time.LocalDateTime
 
 /**
  * Integration tests for ShiftController.
@@ -44,6 +45,19 @@ class ShiftControllerIntegrationTest {
 
     private lateinit var staffToken: String
     private lateinit var adminToken: String
+
+    /**
+     * Default fixture times used by tests that don't care about the specific values.
+     */
+    private val defaultClockIn: LocalDateTime = LocalDateTime.of(2025, 1, 15, 9, 0)
+    private val defaultClockOut: LocalDateTime = LocalDateTime.of(2025, 1, 15, 17, 0)
+
+    private fun createShiftRequest(userId: Long): CreateShiftRequest =
+        CreateShiftRequest(
+            userId = userId,
+            clockInTime = defaultClockIn,
+            clockOutTime = defaultClockOut,
+        )
 
     /**
      * Set up test users before each test.
@@ -79,7 +93,7 @@ class ShiftControllerIntegrationTest {
     @Test
     fun `should create shift when authenticated`() {
         // Given: Valid shift request
-        val request = CreateShiftRequest(userId = 1L)
+        val request = createShiftRequest(userId = 1L)
 
         // When: POST with valid token
         mockMvc.post("/api/shifts") {
@@ -92,13 +106,15 @@ class ShiftControllerIntegrationTest {
             jsonPath("$.id") { exists() }
             jsonPath("$.userId") { value(1) }
             jsonPath("$.status") { value("DRAFT") }
+            jsonPath("$.clockInTime") { exists() }
+            jsonPath("$.clockOutTime") { exists() }
         }
     }
 
     @Test
     fun `should reject shift creation without authentication`() {
         // Given: Valid shift request but no token
-        val request = CreateShiftRequest(userId = 1L)
+        val request = createShiftRequest(userId = 1L)
 
         // When: POST without token
         mockMvc.post("/api/shifts") {
@@ -116,7 +132,7 @@ class ShiftControllerIntegrationTest {
         val createResponse = mockMvc.post("/api/shifts") {
             contentType = MediaType.APPLICATION_JSON
             header("Authorization", "Bearer $staffToken")
-            content = objectMapper.writeValueAsString(CreateShiftRequest(userId = 1L))
+            content = objectMapper.writeValueAsString(createShiftRequest(userId = 1L))
         }.andReturn().response.contentAsString
 
         val shiftId = objectMapper.readTree(createResponse)["id"].asLong()
@@ -138,7 +154,7 @@ class ShiftControllerIntegrationTest {
         val createResponse = mockMvc.post("/api/shifts") {
             contentType = MediaType.APPLICATION_JSON
             header("Authorization", "Bearer $staffToken")
-            content = objectMapper.writeValueAsString(CreateShiftRequest(userId = 1L))
+            content = objectMapper.writeValueAsString(createShiftRequest(userId = 1L))
         }.andReturn().response.contentAsString
 
         val shiftId = objectMapper.readTree(createResponse)["id"].asLong()
@@ -163,7 +179,7 @@ class ShiftControllerIntegrationTest {
         val createResponse = mockMvc.post("/api/shifts") {
             contentType = MediaType.APPLICATION_JSON
             header("Authorization", "Bearer $staffToken")
-            content = objectMapper.writeValueAsString(CreateShiftRequest(userId = 1L))
+            content = objectMapper.writeValueAsString(createShiftRequest(userId = 1L))
         }.andReturn().response.contentAsString
 
         val shiftId = objectMapper.readTree(createResponse)["id"].asLong()
@@ -187,7 +203,7 @@ class ShiftControllerIntegrationTest {
         val createResponse = mockMvc.post("/api/shifts") {
             contentType = MediaType.APPLICATION_JSON
             header("Authorization", "Bearer $staffToken")
-            content = objectMapper.writeValueAsString(CreateShiftRequest(userId = 1L))
+            content = objectMapper.writeValueAsString(createShiftRequest(userId = 1L))
         }.andReturn().response.contentAsString
 
         val shiftId = objectMapper.readTree(createResponse)["id"].asLong()
@@ -212,7 +228,7 @@ class ShiftControllerIntegrationTest {
         val createResponse = mockMvc.post("/api/shifts") {
             contentType = MediaType.APPLICATION_JSON
             header("Authorization", "Bearer $staffToken")
-            content = objectMapper.writeValueAsString(CreateShiftRequest(userId = 1L))
+            content = objectMapper.writeValueAsString(createShiftRequest(userId = 1L))
         }.andReturn().response.contentAsString
 
         val shiftId = objectMapper.readTree(createResponse)["id"].asLong()
@@ -235,13 +251,13 @@ class ShiftControllerIntegrationTest {
         mockMvc.post("/api/shifts") {
             contentType = MediaType.APPLICATION_JSON
             header("Authorization", "Bearer $staffToken")
-            content = objectMapper.writeValueAsString(CreateShiftRequest(userId = 1L))
+            content = objectMapper.writeValueAsString(createShiftRequest(userId = 1L))
         }
 
         mockMvc.post("/api/shifts") {
             contentType = MediaType.APPLICATION_JSON
             header("Authorization", "Bearer $staffToken")
-            content = objectMapper.writeValueAsString(CreateShiftRequest(userId = 1L))
+            content = objectMapper.writeValueAsString(createShiftRequest(userId = 1L))
         }
 
         // When: GET shifts by user
@@ -262,7 +278,7 @@ class ShiftControllerIntegrationTest {
         val createResponse = mockMvc.post("/api/shifts") {
             contentType = MediaType.APPLICATION_JSON
             header("Authorization", "Bearer $staffToken")
-            content = objectMapper.writeValueAsString(CreateShiftRequest(userId = 1L))
+            content = objectMapper.writeValueAsString(createShiftRequest(userId = 1L))
         }.andReturn().response.contentAsString
 
         val shiftId = objectMapper.readTree(createResponse)["id"].asLong()

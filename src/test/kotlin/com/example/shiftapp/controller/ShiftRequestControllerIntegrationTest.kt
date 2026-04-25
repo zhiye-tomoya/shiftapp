@@ -17,6 +17,7 @@ import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import java.time.LocalDateTime
 
 /**
  * Integration tests for ShiftRequestController.
@@ -98,12 +99,19 @@ class ShiftRequestControllerIntegrationTest {
     /**
      * Helper function to create and approve a shift.
      */
+    private fun defaultCreateShiftRequest(userId: Long): CreateShiftRequest =
+        CreateShiftRequest(
+            userId = userId,
+            clockInTime = LocalDateTime.of(2025, 1, 15, 9, 0),
+            clockOutTime = LocalDateTime.of(2025, 1, 15, 17, 0),
+        )
+
     private fun createApprovedShift(userId: Long, token: String): Long {
         // Create shift
         val createResponse = mockMvc.post("/api/shifts") {
             contentType = MediaType.APPLICATION_JSON
             header("Authorization", "Bearer $token")
-            content = objectMapper.writeValueAsString(CreateShiftRequest(userId))
+            content = objectMapper.writeValueAsString(defaultCreateShiftRequest(userId))
         }.andReturn().response.contentAsString
 
         val shiftId = objectMapper.readTree(createResponse)["id"].asLong()
@@ -201,7 +209,7 @@ class ShiftRequestControllerIntegrationTest {
         val createResponse = mockMvc.post("/api/shifts") {
             contentType = MediaType.APPLICATION_JSON
             header("Authorization", "Bearer $staff1Token")
-            content = objectMapper.writeValueAsString(CreateShiftRequest(staff1Id))
+            content = objectMapper.writeValueAsString(defaultCreateShiftRequest(staff1Id))
         }.andReturn().response.contentAsString
 
         val shiftId = objectMapper.readTree(createResponse)["id"].asLong()

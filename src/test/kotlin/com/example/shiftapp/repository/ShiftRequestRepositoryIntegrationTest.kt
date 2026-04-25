@@ -22,7 +22,7 @@ class ShiftRequestRepositoryIntegrationTest {
     @Test
     fun `should save and retrieve shift request`() {
         // Given
-        val shift = Shift(status = ShiftStatus.APPROVED, userId = 100L)
+        val shift = Shift(status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
         val request = ShiftRequest(
             shift = shift,
             requesterId = 100L,
@@ -44,8 +44,8 @@ class ShiftRequestRepositoryIntegrationTest {
     @Test
     fun `should find requests by requester id`() {
         // Given
-        val shift1 = Shift(status = ShiftStatus.APPROVED, userId = 100L)
-        val shift2 = Shift(status = ShiftStatus.APPROVED, userId = 100L)
+        val shift1 = Shift(status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
+        val shift2 = Shift(status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
 
         shiftRequestRepository.save(
             ShiftRequest(shift = shift1, requesterId = 100L, targetUserId = 200L, status = RequestStatus.PENDING)
@@ -65,8 +65,8 @@ class ShiftRequestRepositoryIntegrationTest {
     @Test
     fun `should find requests by status`() {
         // Given
-        val shift1 = Shift(status = ShiftStatus.APPROVED, userId = 100L)
-        val shift2 = Shift(status = ShiftStatus.APPROVED, userId = 200L)
+        val shift1 = Shift(status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
+        val shift2 = Shift(status = ShiftStatus.APPROVED, userId = 200L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
 
         shiftRequestRepository.save(
             ShiftRequest(shift = shift1, requesterId = 100L, targetUserId = 200L, status = RequestStatus.PENDING)

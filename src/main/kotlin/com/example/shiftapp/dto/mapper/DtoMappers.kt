@@ -21,7 +21,9 @@ fun Shift.toResponse(): ShiftResponse {
     return ShiftResponse(
         id = this.id,
         userId = this.userId,
-        status = this.status.name
+        status = this.status.name,
+        clockInTime = this.clockInTime,
+        clockOutTime = this.clockOutTime,
     )
 }
 

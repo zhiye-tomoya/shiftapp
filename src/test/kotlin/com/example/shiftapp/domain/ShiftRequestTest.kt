@@ -14,7 +14,7 @@ class ShiftRequestTest {
 
     @Test
     fun `new request should start as PENDING`() {
-        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
+        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
         val request = ShiftRequest(
             id = 1L,
             shift = shift,
@@ -28,7 +28,7 @@ class ShiftRequestTest {
 
     @Test
     fun `target user can approve a PENDING request`() {
-        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
+        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
         val request = ShiftRequest(
             id = 1L,
             shift = shift,
@@ -45,7 +45,7 @@ class ShiftRequestTest {
 
     @Test
     fun `target user can reject a PENDING request`() {
-        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
+        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
         val request = ShiftRequest(
             id = 1L,
             shift = shift,
@@ -62,7 +62,7 @@ class ShiftRequestTest {
 
     @Test
     fun `cannot approve an already TARGET_APPROVED request`() {
-        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 200L)
+        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 200L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
         val request = ShiftRequest(
             id = 1L,
             shift = shift,
@@ -80,7 +80,7 @@ class ShiftRequestTest {
 
     @Test
     fun `cannot approve an already TARGET_REJECTED request`() {
-        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
+        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
         val request = ShiftRequest(
             id = 1L,
             shift = shift,
@@ -98,7 +98,7 @@ class ShiftRequestTest {
 
     @Test
     fun `cannot reject an already TARGET_APPROVED request`() {
-        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 200L)
+        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 200L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
         val request = ShiftRequest(
             id = 1L,
             shift = shift,
@@ -116,7 +116,7 @@ class ShiftRequestTest {
 
     @Test
     fun `cannot reject an already TARGET_REJECTED request`() {
-        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
+        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
         val request = ShiftRequest(
             id = 1L,
             shift = shift,
@@ -134,7 +134,7 @@ class ShiftRequestTest {
 
     @Test
     fun `target approval does not transfer ownership yet`() {
-        val originalShift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
+        val originalShift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
         val request = ShiftRequest(
             id = 1L,
             shift = originalShift,
@@ -151,7 +151,7 @@ class ShiftRequestTest {
 
     @Test
     fun `rejected request keeps shift ownership with requester`() {
-        val originalShift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
+        val originalShift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
         val request = ShiftRequest(
             id = 1L,
             shift = originalShift,
@@ -169,7 +169,7 @@ class ShiftRequestTest {
 
     @Test
     fun `admin can approve a TARGET_APPROVED request and ownership transfers`() {
-        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
+        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
         val request = ShiftRequest(
             id = 1L,
             shift = shift,
@@ -186,7 +186,7 @@ class ShiftRequestTest {
 
     @Test
     fun `admin cannot approve a PENDING request`() {
-        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
+        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
         val request = ShiftRequest(
             id = 1L,
             shift = shift,
@@ -204,7 +204,7 @@ class ShiftRequestTest {
 
     @Test
     fun `admin can reject a TARGET_APPROVED request and ownership stays with requester`() {
-        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
+        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
         val request = ShiftRequest(
             id = 1L,
             shift = shift,
@@ -221,7 +221,7 @@ class ShiftRequestTest {
 
     @Test
     fun `admin cannot reject a PENDING request`() {
-        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
+        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
         val request = ShiftRequest(
             id = 1L,
             shift = shift,
@@ -241,7 +241,7 @@ class ShiftRequestTest {
 
     @Test
     fun `cannot create swap request for DRAFT shift`() {
-        val draftShift = Shift(id = 1L, status = ShiftStatus.DRAFT, userId = 100L)
+        val draftShift = Shift(id = 1L, status = ShiftStatus.DRAFT, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
 
         val exception = assertThrows<IllegalArgumentException> {
             ShiftRequest(
@@ -258,7 +258,7 @@ class ShiftRequestTest {
 
     @Test
     fun `cannot create swap request for SUBMITTED shift`() {
-        val submittedShift = Shift(id = 1L, status = ShiftStatus.SUBMITTED, userId = 100L)
+        val submittedShift = Shift(id = 1L, status = ShiftStatus.SUBMITTED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
 
         val exception = assertThrows<IllegalArgumentException> {
             ShiftRequest(
@@ -275,7 +275,7 @@ class ShiftRequestTest {
 
     @Test
     fun `cannot create swap request for REJECTED shift`() {
-        val rejectedShift = Shift(id = 1L, status = ShiftStatus.REJECTED, userId = 100L)
+        val rejectedShift = Shift(id = 1L, status = ShiftStatus.REJECTED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
 
         val exception = assertThrows<IllegalArgumentException> {
             ShiftRequest(
@@ -292,7 +292,7 @@ class ShiftRequestTest {
 
     @Test
     fun `can create swap request for APPROVED shift`() {
-        val approvedShift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
+        val approvedShift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
 
         val request = ShiftRequest(
             id = 1L,
@@ -308,7 +308,7 @@ class ShiftRequestTest {
 
     @Test
     fun `requester must be the shift owner`() {
-        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L)
+        val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
 
         val exception = assertThrows<IllegalArgumentException> {
             ShiftRequest(

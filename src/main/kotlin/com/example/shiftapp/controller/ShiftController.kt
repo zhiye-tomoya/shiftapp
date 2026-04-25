@@ -45,7 +45,9 @@ class ShiftController(
     fun createShift(@Valid @RequestBody request: CreateShiftRequest): ResponseEntity<ShiftResponse> {
         val shift = Shift(
             userId = request.userId,
-            status = ShiftStatus.DRAFT
+            status = ShiftStatus.DRAFT,
+            clockInTime = request.clockInTime,
+            clockOutTime = request.clockOutTime,
         )
         val created = shiftService.createShift(shift)
         return ResponseEntity.status(HttpStatus.CREATED).body(created.toResponse())

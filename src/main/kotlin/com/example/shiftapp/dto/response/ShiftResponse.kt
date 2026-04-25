@@ -1,5 +1,7 @@
 package com.example.shiftapp.dto.response
 
+import java.time.LocalDateTime
+
 /**
  * Response DTO for Shift entity.
  *
@@ -9,5 +11,7 @@ package com.example.shiftapp.dto.response
 data class ShiftResponse(
     val id: Long,
     val userId: Long,
-    val status: String
+    val status: String,
+    val clockInTime: LocalDateTime,
+    val clockOutTime: LocalDateTime,
 )

@@ -2,6 +2,7 @@ package com.example.shiftapp.repository
 
 import com.example.shiftapp.domain.Shift
 import com.example.shiftapp.domain.ShiftStatus
+import java.time.LocalDateTime
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
@@ -22,7 +23,9 @@ class ShiftRepositoryIntegrationTest {
         // Given
         val shift = Shift(
             status = ShiftStatus.DRAFT,
-            userId = 100L
+            userId = 100L,
+            clockInTime = LocalDateTime.of(2025, 1, 15, 9, 0),
+            clockOutTime = LocalDateTime.of(2025, 1, 15, 17, 0),
         )
 
         // When
@@ -39,7 +42,7 @@ class ShiftRepositoryIntegrationTest {
     fun `should find shift by id`() {
         // Given
         val shift = shiftRepository.save(
-            Shift(status = ShiftStatus.APPROVED, userId = 200L)
+            Shift(status = ShiftStatus.APPROVED, userId = 200L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
         )
 
         // When
@@ -54,9 +57,9 @@ class ShiftRepositoryIntegrationTest {
     @Test
     fun `should find all shifts by userId`() {
         // Given
-        shiftRepository.save(Shift(status = ShiftStatus.DRAFT, userId = 100L))
-        shiftRepository.save(Shift(status = ShiftStatus.APPROVED, userId = 100L))
-        shiftRepository.save(Shift(status = ShiftStatus.DRAFT, userId = 200L))
+        shiftRepository.save(Shift(status = ShiftStatus.DRAFT, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0)))
+        shiftRepository.save(Shift(status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0)))
+        shiftRepository.save(Shift(status = ShiftStatus.DRAFT, userId = 200L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0)))
 
         // When
         val shifts = shiftRepository.findAllByUserId(100L)
@@ -70,7 +73,7 @@ class ShiftRepositoryIntegrationTest {
     fun `should update shift status`() {
         // Given
         val shift = shiftRepository.save(
-            Shift(status = ShiftStatus.DRAFT, userId = 100L)
+            Shift(status = ShiftStatus.DRAFT, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
         )
 
         // When
