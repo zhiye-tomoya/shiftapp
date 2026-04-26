@@ -168,7 +168,7 @@ class ShiftRequestTest {
     // ===== 2-Step Approval: Admin Approval Tests =====
 
     @Test
-    fun `admin can approve a TARGET_APPROVED request and ownership transfers`() {
+    fun `ownership does not change on admin approval`() {
         val shift = Shift(id = 1L, status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
         val request = ShiftRequest(
             id = 1L,
@@ -181,7 +181,7 @@ class ShiftRequestTest {
         val adminApprovedRequest = request.approveByAdmin()
 
         assertEquals(RequestStatus.ADMIN_APPROVED, adminApprovedRequest.status)
-        assertEquals(200L, adminApprovedRequest.shift.userId, "Shift ownership transfers to target user on admin approval")
+        assertEquals(100L, adminApprovedRequest.shift.userId)
     }
 
     @Test

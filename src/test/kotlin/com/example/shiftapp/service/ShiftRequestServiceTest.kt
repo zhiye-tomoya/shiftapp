@@ -87,6 +87,7 @@ class ShiftRequestServiceTest {
             targetUserId = 200L,
             status = RequestStatus.TARGET_APPROVED
         )
+        every { shiftRepository.save(any()) } answers { firstArg() }
         every { shiftRequestRepository.findById(1L) } returns Optional.of(shiftRequest)
         every { shiftRequestRepository.save(any()) } answers { firstArg() } 
 

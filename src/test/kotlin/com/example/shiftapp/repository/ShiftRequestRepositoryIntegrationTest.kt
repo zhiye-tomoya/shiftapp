@@ -7,7 +7,9 @@ import com.example.shiftapp.domain.RequestStatus
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager
 import org.springframework.test.context.ActiveProfiles
+import java.time.LocalDateTime
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -19,10 +21,27 @@ class ShiftRequestRepositoryIntegrationTest {
     @Autowired
     private lateinit var shiftRequestRepository: ShiftRequestRepository
 
+    @Autowired
+    private lateinit var entityManager: TestEntityManager
+
+    /**
+     * Helper: persist a Shift first, since `ShiftRequest.shift` is a
+     * `@ManyToOne` without cascade. Saving a request whose Shift is still
+     * transient throws `TransientPropertyValueException`.
+     */
+    private fun persistShift(userId: Long): Shift = entityManager.persistAndFlush(
+        Shift(
+            status = ShiftStatus.APPROVED,
+            userId = userId,
+            clockInTime = LocalDateTime.of(2025, 1, 15, 9, 0),
+            clockOutTime = LocalDateTime.of(2025, 1, 15, 17, 0)
+        )
+    )
+
     @Test
     fun `should save and retrieve shift request`() {
         // Given
-        val shift = Shift(status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
+        val shift = persistShift(userId = 100L)
         val request = ShiftRequest(
             shift = shift,
             requesterId = 100L,
@@ -44,8 +63,8 @@ class ShiftRequestRepositoryIntegrationTest {
     @Test
     fun `should find requests by requester id`() {
         // Given
-        val shift1 = Shift(status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
-        val shift2 = Shift(status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
+        val shift1 = persistShift(userId = 100L)
+        val shift2 = persistShift(userId = 100L)
 
         shiftRequestRepository.save(
             ShiftRequest(shift = shift1, requesterId = 100L, targetUserId = 200L, status = RequestStatus.PENDING)
@@ -65,8 +84,8 @@ class ShiftRequestRepositoryIntegrationTest {
     @Test
     fun `should find requests by status`() {
         // Given
-        val shift1 = Shift(status = ShiftStatus.APPROVED, userId = 100L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
-        val shift2 = Shift(status = ShiftStatus.APPROVED, userId = 200L, clockInTime = java.time.LocalDateTime.of(2025, 1, 15, 9, 0), clockOutTime = java.time.LocalDateTime.of(2025, 1, 15, 17, 0))
+        val shift1 = persistShift(userId = 100L)
+        val shift2 = persistShift(userId = 200L)
 
         shiftRequestRepository.save(
             ShiftRequest(shift = shift1, requesterId = 100L, targetUserId = 200L, status = RequestStatus.PENDING)
