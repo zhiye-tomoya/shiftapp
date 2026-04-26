@@ -11,110 +11,108 @@ import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 
 /**
+ * Result bundle returned by auth flows.
+ *
+ * - [auth]         : JSON body returned to the client (contains the access token).
+ * - [refreshToken] : the refresh token string – the controller is responsible
+ *                    for placing it inside an HttpOnly cookie. It must NEVER
+ *                    be put inside the JSON body.
+ */
+data class AuthTokens(
+    val auth: AuthResponse,
+    val refreshToken: String,
+)
+
+/**
  * Service for handling user authentication.
  *
- * Responsibilities:
- * - Register new users (hash passwords!)
- * - Login users (verify passwords, generate JWT)
- * - Validate email uniqueness
- *
- * Security Notes:
- * - Passwords are NEVER stored in plain text
- * - We use BCrypt for password hashing (one-way, secure)
- * - Login failures should not reveal if email or password was wrong (security best practice)
+ * Token strategy:
+ * - access  → returned in JSON body, kept in front-end memory
+ * - refresh → returned via HttpOnly cookie, used to obtain a new access token
  */
 @Service
 class AuthService(
     private val userRepository: UserRepository,
     private val passwordEncoder: PasswordEncoder,
-    private val jwtUtil: JwtUtil
+    private val jwtUtil: JwtUtil,
 ) {
 
     /**
-     * Register a new user.
-     *
-     * Steps:
-     * 1. Check if email already exists (reject if duplicate)
-     * 2. Validate role (must be ADMIN or STAFF)
-     * 3. Hash the password (NEVER store plain text!)
-     * 4. Save user to database
-     * 5. Generate JWT token
-     * 6. Return token to client
+     * Register a new user and immediately issue tokens.
      */
-    fun register(request: RegisterRequest): AuthResponse {
-        // Check if user already exists
+    fun register(request: RegisterRequest): AuthTokens {
         if (userRepository.existsByEmail(request.email)) {
             throw IllegalArgumentException("Email already exists")
         }
 
-        // Validate role
         val role = try {
             Role.valueOf(request.role.uppercase())
         } catch (e: IllegalArgumentException) {
             throw IllegalArgumentException("Invalid role: ${request.role}. Must be ADMIN or STAFF")
         }
 
-        // Create new user with hashed password
         val user = User(
             name = request.name,
             email = request.email,
-            password = passwordEncoder.encode(request.password),  // Hash password!
+            password = passwordEncoder.encode(request.password),
             role = role
         )
 
-        val savedUser = userRepository.save(user)
-
-        // Generate JWT token
-        val token = jwtUtil.generateToken(
-            email = savedUser.email,
-            userId = savedUser.id,
-            role = savedUser.role.name
-        )
-
-        return AuthResponse(
-            token = token,
-            userId = savedUser.id,
-            email = savedUser.email,
-            role = savedUser.role.name
-        )
+        val saved = userRepository.save(user)
+        return issueTokens(saved)
     }
 
     /**
-     * Login a user.
-     *
-     * Steps:
-     * 1. Find user by email
-     * 2. Verify password (compare hashed password with input)
-     * 3. Generate JWT token if valid
-     * 4. Return token to client
-     *
-     * Security Note:
-     * We return "Invalid email or password" for both cases (email not found OR wrong password)
-     * This prevents attackers from knowing which emails exist in the system.
+     * Verify credentials and issue tokens.
      */
-    fun login(request: LoginRequest): AuthResponse {
-        // Find user by email
+    fun login(request: LoginRequest): AuthTokens {
         val user = userRepository.findByEmail(request.email)
             ?: throw IllegalArgumentException("Invalid email or password")
 
-        // Verify password
-        // passwordEncoder.matches() compares the plain password with the hashed one
         if (!passwordEncoder.matches(request.password, user.password)) {
             throw IllegalArgumentException("Invalid email or password")
         }
 
-        // Generate JWT token
-        val token = jwtUtil.generateToken(
-            email = user.email,
-            userId = user.id,
-            role = user.role.name
-        )
+        return issueTokens(user)
+    }
 
-        return AuthResponse(
-            token = token,
+    /**
+     * Exchange a valid refresh token for a fresh access token.
+     *
+     * We also rotate the refresh token (issue a new one) so that
+     * the next refresh requires the latest cookie. This is a simple
+     * mitigation for token replay – a fully-fledged solution would
+     * persist a refresh-token id ("jti") server-side.
+     */
+    fun refresh(refreshToken: String): AuthTokens {
+        if (!jwtUtil.validateRefreshToken(refreshToken)) {
+            throw IllegalArgumentException("Invalid or expired refresh token")
+        }
+
+        val email = jwtUtil.extractEmail(refreshToken)
+        val user = userRepository.findByEmail(email)
+            ?: throw IllegalArgumentException("Invalid refresh token")
+
+        return issueTokens(user)
+    }
+
+    private fun issueTokens(user: User): AuthTokens {
+        val access = jwtUtil.generateAccessToken(
+            email = user.email,
+            userId = user.id,
+            role = user.role.name
+        )
+        val refresh = jwtUtil.generateRefreshToken(
+            email = user.email,
+            userId = user.id,
+            role = user.role.name
+        )
+        val body = AuthResponse(
+            token = access,
             userId = user.id,
             email = user.email,
             role = user.role.name
         )
+        return AuthTokens(auth = body, refreshToken = refresh)
     }
 }

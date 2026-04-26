@@ -12,15 +12,12 @@ import javax.crypto.SecretKey
 /**
  * Utility class for JWT token operations.
  *
- * Responsibilities:
- * - Generate JWT tokens when users log in
- * - Extract information from tokens (email, userId, role)
- * - Validate tokens on each request
+ * Two token kinds:
+ * - access  : short-lived. Stored in front-end memory and sent via Authorization header.
+ * - refresh : long-lived.  Stored in HttpOnly Cookie and used to obtain a new access token.
  *
- * JWT Structure: header.payload.signature
- * - Header: Algorithm info (HS256)
- * - Payload: User data (email, userId, role, expiration)
- * - Signature: Proves token wasn't tampered with
+ * The "type" custom claim distinguishes them so a refresh token cannot
+ * be (mis)used as an access token and vice versa.
  */
 @Component
 class JwtUtil {
@@ -28,93 +25,125 @@ class JwtUtil {
     @Value("\${jwt.secret}")
     private lateinit var secret: String
 
-    @Value("\${jwt.expiration}")
-    private var expiration: Long = 86400000 // 24 hours in milliseconds
+    /** Access token TTL (ms). Default: 15 minutes. */
+    @Value("\${jwt.access.expiration:900000}")
+    private var accessExpiration: Long = 900_000
+
+    /** Refresh token TTL (ms). Default: 7 days. */
+    @Value("\${jwt.refresh.expiration:604800000}")
+    private var refreshExpiration: Long = 604_800_000
+
+    companion object {
+        const val TYPE_ACCESS = "access"
+        const val TYPE_REFRESH = "refresh"
+        private const val CLAIM_TYPE = "type"
+        private const val CLAIM_USER_ID = "userId"
+        private const val CLAIM_ROLE = "role"
+    }
+
+    private fun getSigningKey(): SecretKey =
+        Keys.hmacShaKeyFor(secret.toByteArray())
+
+    // --------------------------------------------------------------------
+    // Generation
+    // --------------------------------------------------------------------
 
     /**
-     * Create a signing key from our secret string.
-     * This key is used to sign and verify tokens.
+     * Generate an access token (short-lived, returned in JSON body).
      */
-    private fun getSigningKey(): SecretKey {
-        return Keys.hmacShaKeyFor(secret.toByteArray())
+    fun generateAccessToken(email: String, userId: Long, role: String): String {
+        val claims = mapOf(
+            CLAIM_USER_ID to userId,
+            CLAIM_ROLE to role,
+            CLAIM_TYPE to TYPE_ACCESS
+        )
+        return buildToken(email, claims, accessExpiration)
     }
 
     /**
-     * Generate a JWT token for a user.
-     *
-     * The token contains:
-     * - subject: user's email
-     * - custom claims: userId and role
-     * - issuedAt: when token was created
-     * - expiration: when token expires (24 hours from now)
+     * Generate a refresh token (long-lived, returned via HttpOnly cookie).
+     * Role is included so we can re-issue an access token without a DB lookup,
+     * but the front-end never sees this token directly.
      */
-    fun generateToken(email: String, userId: Long, role: String): String {
+    fun generateRefreshToken(email: String, userId: Long, role: String): String {
         val claims = mapOf(
-            "userId" to userId,
-            "role" to role
+            CLAIM_USER_ID to userId,
+            CLAIM_ROLE to role,
+            CLAIM_TYPE to TYPE_REFRESH
         )
+        return buildToken(email, claims, refreshExpiration)
+    }
 
+    /**
+     * Backwards-compatible alias used by older code paths / tests.
+     * Equivalent to [generateAccessToken].
+     */
+    fun generateToken(email: String, userId: Long, role: String): String =
+        generateAccessToken(email, userId, role)
+
+    private fun buildToken(subject: String, claims: Map<String, Any>, ttlMillis: Long): String {
+        val now = Date()
         return Jwts.builder()
-            .subject(email)
+            .subject(subject)
             .claims(claims)
-            .issuedAt(Date())
-            .expiration(Date(System.currentTimeMillis() + expiration))
+            .issuedAt(now)
+            .expiration(Date(now.time + ttlMillis))
             .signWith(getSigningKey())
             .compact()
     }
 
-    /**
-     * Extract the email (subject) from a token.
-     */
-    fun extractEmail(token: String): String {
-        return extractAllClaims(token).subject
-    }
+    // --------------------------------------------------------------------
+    // Extraction
+    // --------------------------------------------------------------------
 
-    /**
-     * Extract the userId from a token's custom claims.
-     * JWT stores numbers as Number type, so we convert to Long.
-     */
+    fun extractEmail(token: String): String =
+        extractAllClaims(token).subject
+
     fun extractUserId(token: String): Long {
-        val userId = extractAllClaims(token)["userId"]
+        val userId = extractAllClaims(token)[CLAIM_USER_ID]
         return when (userId) {
             is Number -> userId.toLong()
             else -> throw IllegalStateException("userId claim is not a number")
         }
     }
 
-    /**
-     * Extract the role from a token's custom claims.
-     */
-    fun extractRole(token: String): String {
-        return extractAllClaims(token)["role"] as String
-    }
+    fun extractRole(token: String): String =
+        extractAllClaims(token)[CLAIM_ROLE] as String
+
+    fun extractTokenType(token: String): String =
+        (extractAllClaims(token)[CLAIM_TYPE] as? String) ?: TYPE_ACCESS
+
+    // --------------------------------------------------------------------
+    // Validation
+    // --------------------------------------------------------------------
 
     /**
-     * Validate a token:
-     * 1. Email matches the UserDetails
-     * 2. Token is not expired
+     * Validate an access token against a UserDetails record.
      */
     fun validateToken(token: String, userDetails: UserDetails): Boolean {
         val email = extractEmail(token)
-        return email == userDetails.username && !isTokenExpired(token)
+        return email == userDetails.username &&
+            !isTokenExpired(token) &&
+            extractTokenType(token) == TYPE_ACCESS
     }
 
     /**
-     * Parse and extract all claims from a token.
-     * This verifies the signature and throws an exception if invalid.
+     * Validate a refresh token. Returns true only if signature is valid,
+     * the token is not expired, and the type claim is "refresh".
      */
-    private fun extractAllClaims(token: String): Claims {
-        return Jwts.parser()
+    fun validateRefreshToken(token: String): Boolean = try {
+        !isTokenExpired(token) && extractTokenType(token) == TYPE_REFRESH
+    } catch (e: Exception) {
+        false
+    }
+
+    private fun extractAllClaims(token: String): Claims =
+        Jwts.parser()
             .verifyWith(getSigningKey())
             .build()
             .parseSignedClaims(token)
             .payload
-    }
 
-    /**
-     * Check if a token has expired.
-     */
-    private fun isTokenExpired(token: String): Boolean {
-        return extractAllClaims(token).expiration.before(Date())
-    }
+    private fun isTokenExpired(token: String): Boolean =
+        extractAllClaims(token).expiration.before(Date())
 }
