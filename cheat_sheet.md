@@ -1,5 +1,55 @@
 # Cheat Sheet
 
+## 初回セットアップ（クローン直後）
+
+> 「`docker compose up -d` したのに DB が空 / `./gradlew bootRun` が落ちる」と困ったら、まずここを読む。
+
+### 必要なもの
+
+| ツール         | バージョン                                     | 備考                                                                    |
+| -------------- | ---------------------------------------------- | ----------------------------------------------------------------------- |
+| Docker Desktop | 任意                                           | PostgreSQL コンテナを動かす                                             |
+| Java (JDK)     | **21（自動DLされるので未インストールでも可）** | `gradle/gradle-daemon-jvm.properties` で固定。 JDK 24+ でも問題なく動く |
+
+### 手順
+
+```bash
+# 1. PostgreSQL を起動（DB はこの時点では空っぽ。これで正常）
+docker compose up -d
+
+# 2. Spring Boot を起動。Hibernate がテーブルを自動で作る (ddl-auto=create-drop)
+./gradlew bootRun
+```
+
+これだけ。アプリが立ち上がったら `http://localhost:8080/swagger-ui/index.html` で API を叩ける。
+
+### テーブルはあるけどデータが無い → これは仕様
+
+`spring.jpa.hibernate.ddl-auto=create-drop` なので、
+
+- `bootRun` を起動するとテーブルが作られる
+- `bootRun` を止めるとテーブルごと消える
+- 初期データを流す仕掛け（data.sql / DataInitializer）は **入っていない**
+
+最初のユーザーは API で作る：
+
+```bash
+curl -X POST http://localhost:8080/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"password123","name":"Admin","role":"MANAGER"}'
+```
+
+### よくあるハマりどころ
+
+| 症状                                                                       | 原因                                                                               | 対処                                                                                                                                             |
+| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `./gradlew bootRun` で `IllegalArgumentException: 26`（または 24/25 など） | Gradle 8.x 同梱の Kotlin コンパイラがホストの新しい JDK バージョンをパースできない | `gradle/gradle-daemon-jvm.properties` が repo に存在することを確認。なければ `toolchainVersion=21` を書いた同ファイルを置いて `./gradlew --stop` |
+| `docker compose up -d` 後に DB が空                                        | 仕様。テーブルは Spring Boot 起動時に作られる                                      | `./gradlew bootRun` を流す                                                                                                                       |
+| `bootRun` を止めるたびにデータが消える                                     | `ddl-auto=create-drop`                                                             | 永続化したいなら `application.properties` を `update` か `none` に変える（その場合は schema.sql / Flyway 等での管理に移行する）                  |
+| ポート `5432` が使われている                                               | ホスト側に別の Postgres が動いている                                               | 既存の Postgres を止める or `docker-compose.yml` の `5432:5432` を `15432:5432` などに変えて `application.properties` の URL も合わせる          |
+
+---
+
 ## MockK
 
 ```kotlin
