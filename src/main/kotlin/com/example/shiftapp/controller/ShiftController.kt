@@ -129,7 +129,7 @@ class ShiftController(
         @RequestParam(required = false)
         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) to: LocalDateTime?,
         @PageableDefault(
-            size = 20,
+            size = 100,
             sort = ["clockInTime"],
             direction = Sort.Direction.DESC,
         ) pageable: Pageable,
@@ -157,8 +157,11 @@ class ShiftController(
      * Returns: List of shifts (can be empty)
      */
     @GetMapping("/user/{userId}")
-    fun getShiftsByUser(@PathVariable userId: Long): ResponseEntity<List<ShiftResponse>> {
-        val shifts = shiftService.getShiftsByUserId(userId)
+    fun getShiftsByUser(
+        @PathVariable userId: Long,
+        @RequestParam(required = false) status: ShiftStatus?,
+    ): ResponseEntity<List<ShiftResponse>> {
+        val shifts = shiftService.getShiftsByUserId(userId, status)
         return ResponseEntity.ok(shifts.map { it.toResponse() })
     }
 }

@@ -28,5 +28,6 @@ interface ShiftRepository : JpaRepository<Shift, Long>, JpaSpecificationExecutor
     // ---- non-paged (used by per-user / per-status read paths) ----
     fun findAllByUserId(userId: Long): List<Shift>
     fun findAllByStatus(status: ShiftStatus): List<Shift>
+    fun findByUserIdAndStatus(userId: Long, status: ShiftStatus): List<Shift> 
 }
 

@@ -106,8 +106,12 @@ class ShiftService(
     /**
      * Get all shifts for a specific user.
      */
-    fun getShiftsByUserId(userId: Long): List<Shift> {
-        return shiftRepository.findAllByUserId(userId)
+    fun getShiftsByUserId(userId: Long, status: ShiftStatus?): List<Shift> {
+        return if (status != null) {
+                        shiftRepository.findByUserIdAndStatus(userId, status)
+                    } else {
+                        shiftRepository.findAllByUserId(userId)
+                    }
     }
 
     /**
