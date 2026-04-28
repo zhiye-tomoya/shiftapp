@@ -2,6 +2,8 @@ package com.example.shiftapp.repository
 
 import com.example.shiftapp.domain.Shift
 import com.example.shiftapp.domain.ShiftStatus
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.stereotype.Repository
 
@@ -12,6 +14,7 @@ import org.springframework.stereotype.Repository
  *   - findById(id): Optional<Shift>
  *   - save(shift): Shift
  *   - findAll(): List<Shift>
+ *   - findAll(pageable): Page<Shift>
  *   - deleteById(id): void
  *   - and more...
  *
@@ -19,12 +22,12 @@ import org.springframework.stereotype.Repository
  */
 @Repository
 interface ShiftRepository : JpaRepository<Shift, Long> {
-    // Custom query methods can be added here
-    // Spring Data JPA automatically implements them based on method names
-
-    // Example: Find all shifts for a specific user
+    // ---- non-paged (used by per-user / per-status read paths) ----
     fun findAllByUserId(userId: Long): List<Shift>
-
-    // Example: Find all shifts with a specific status
     fun findAllByStatus(status: ShiftStatus): List<Shift>
+
+    // ---- paged + optional filters (used by ADMIN list endpoint) ----
+    fun findAllByStatus(status: ShiftStatus, pageable: Pageable): Page<Shift>
+    fun findAllByUserId(userId: Long, pageable: Pageable): Page<Shift>
+    fun findAllByStatusAndUserId(status: ShiftStatus, userId: Long, pageable: Pageable): Page<Shift>
 }

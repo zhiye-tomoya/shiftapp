@@ -82,7 +82,11 @@
 
 フロント `lib/api/shifts.ts` のコメントに記載されている未実装エンドポイント:
 
-- [ ] `GET /api/shifts`（admin overview / 全件一覧）
+- [x] `GET /api/shifts`（admin overview / 全件一覧）
+      ADMIN-only `@PreAuthorize("hasRole('ADMIN')")`、クエリで `status` / `userId`
+      の絞り込みと `page` / `size` / `sort` のページング対応済み。レスポンスは
+      `PageResponse<ShiftResponse>` envelope。フロントは `listAllShifts` /
+      `useAllShifts` から利用。
 - [ ] `PUT /api/shifts/{id}`（時刻・所有者の編集）
 - [ ] `DELETE /api/shifts/{id}`（削除）
 

@@ -273,6 +273,111 @@ class ShiftControllerIntegrationTest {
     }
 
     @Test
+    fun `should allow ADMIN to list all shifts across users`() {
+        // Given: shifts owned by two different users
+        mockMvc.post("/api/shifts") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(createShiftRequest(userId = 1L))
+        }
+        mockMvc.post("/api/shifts") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(createShiftRequest(userId = 2L))
+        }
+
+        // When: ADMIN lists everything
+        mockMvc.get("/api/shifts") {
+            header("Authorization", "Bearer $adminToken")
+        }.andExpect {
+            // Then: page envelope with both shifts
+            status { isOk() }
+            jsonPath("$.content.length()") { value(2) }
+            jsonPath("$.totalElements") { value(2) }
+            jsonPath("$.page") { value(0) }
+            jsonPath("$.size") { value(20) }
+        }
+    }
+
+    @Test
+    fun `should filter all shifts by status and userId`() {
+        // Given: a SUBMITTED shift for user 1 and a DRAFT shift for user 2
+        val submittedResponse = mockMvc.post("/api/shifts") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(createShiftRequest(userId = 1L))
+        }.andReturn().response.contentAsString
+        val submittedId = objectMapper.readTree(submittedResponse)["id"].asLong()
+        mockMvc.post("/api/shifts/$submittedId/submit") {
+            header("Authorization", "Bearer $staffToken")
+        }
+
+        mockMvc.post("/api/shifts") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(createShiftRequest(userId = 2L))
+        }
+
+        // When: ADMIN filters to SUBMITTED + userId=1
+        mockMvc.get("/api/shifts?status=SUBMITTED&userId=1") {
+            header("Authorization", "Bearer $adminToken")
+        }.andExpect {
+            // Then: only the user-1 SUBMITTED shift comes back
+            status { isOk() }
+            jsonPath("$.content.length()") { value(1) }
+            jsonPath("$.content[0].id") { value(submittedId) }
+            jsonPath("$.content[0].userId") { value(1) }
+            jsonPath("$.content[0].status") { value("SUBMITTED") }
+            jsonPath("$.totalElements") { value(1) }
+        }
+    }
+
+    @Test
+    fun `should paginate all shifts`() {
+        // Given: 3 shifts in total
+        repeat(3) {
+            mockMvc.post("/api/shifts") {
+                contentType = MediaType.APPLICATION_JSON
+                header("Authorization", "Bearer $staffToken")
+                content = objectMapper.writeValueAsString(createShiftRequest(userId = 1L))
+            }
+        }
+
+        // When: ADMIN requests size=2 page=0
+        mockMvc.get("/api/shifts?page=0&size=2") {
+            header("Authorization", "Bearer $adminToken")
+        }.andExpect {
+            // Then: 2 items on page 0, totals reflect the full set
+            status { isOk() }
+            jsonPath("$.content.length()") { value(2) }
+            jsonPath("$.page") { value(0) }
+            jsonPath("$.size") { value(2) }
+            jsonPath("$.totalElements") { value(3) }
+            jsonPath("$.totalPages") { value(2) }
+        }
+
+        // And: page=1 returns the remainder
+        mockMvc.get("/api/shifts?page=1&size=2") {
+            header("Authorization", "Bearer $adminToken")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.content.length()") { value(1) }
+            jsonPath("$.page") { value(1) }
+        }
+    }
+
+    @Test
+    fun `should reject STAFF user trying to list all shifts`() {
+        // When: STAFF user tries to list every shift
+        mockMvc.get("/api/shifts") {
+            header("Authorization", "Bearer $staffToken")
+        }.andExpect {
+            // Then: Access denied (Spring Security wraps in 500 with exception handler)
+            status { is5xxServerError() }
+        }
+    }
+
+    @Test
     fun `should reject invalid state transition`() {
         // Given: DRAFT shift (never submitted)
         val createResponse = mockMvc.post("/api/shifts") {

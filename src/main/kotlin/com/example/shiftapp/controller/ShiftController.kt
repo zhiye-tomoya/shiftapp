@@ -4,9 +4,12 @@ import com.example.shiftapp.domain.Shift
 import com.example.shiftapp.domain.ShiftStatus
 import com.example.shiftapp.dto.mapper.toResponse
 import com.example.shiftapp.dto.request.CreateShiftRequest
+import com.example.shiftapp.dto.response.PageResponse
 import com.example.shiftapp.dto.response.ShiftResponse
 import com.example.shiftapp.service.ShiftService
 import jakarta.validation.Valid
+import org.springframework.data.domain.Pageable
+import org.springframework.data.web.PageableDefault
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
@@ -20,6 +23,7 @@ import org.springframework.web.bind.annotation.*
  * - POST /api/shifts/{id}/submit: Submit a shift for approval (STAFF)
  * - POST /api/shifts/{id}/approve: Approve a shift (ADMIN only)
  * - POST /api/shifts/{id}/reject: Reject a shift (ADMIN only)
+ * - GET /api/shifts: List all shifts with optional filters & pagination (ADMIN only)
  * - GET /api/shifts/{id}: Get a shift by ID
  * - GET /api/shifts/user/{userId}: Get all shifts for a user
  *
@@ -91,6 +95,32 @@ class ShiftController(
     fun rejectShift(@PathVariable id: Long): ResponseEntity<ShiftResponse> {
         val rejected = shiftService.rejectShift(id)
         return ResponseEntity.ok(rejected.toResponse())
+    }
+
+    /**
+     * List shifts across **all** users — the ADMIN overview.
+     *
+     * ADMIN only — STAFF should keep using `GET /api/shifts/user/{userId}`
+     * for their own shifts.
+     *
+     * Query params (all optional):
+     *  - `status` filter on shift status (DRAFT/SUBMITTED/APPROVED/REJECTED)
+     *  - `userId` filter on owner
+     *  - `page`   0-based page index (default 0)
+     *  - `size`   page size (default 20)
+     *  - `sort`   Spring's standard `sort=field,asc|desc` syntax
+     *
+     * Response: [PageResponse] of [ShiftResponse].
+     */
+    @GetMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    fun getAllShifts(
+        @RequestParam(required = false) status: ShiftStatus?,
+        @RequestParam(required = false) userId: Long?,
+        @PageableDefault(size = 20) pageable: Pageable,
+    ): ResponseEntity<PageResponse<ShiftResponse>> {
+        val page = shiftService.getAllShifts(status, userId, pageable)
+        return ResponseEntity.ok(PageResponse.from(page) { it.toResponse() })
     }
 
     /**

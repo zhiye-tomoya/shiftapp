@@ -1,7 +1,10 @@
 package com.example.shiftapp.service
 
 import com.example.shiftapp.domain.Shift
+import com.example.shiftapp.domain.ShiftStatus
 import com.example.shiftapp.repository.ShiftRepository
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 
 /**
@@ -22,6 +25,32 @@ class ShiftService(
      */
     fun createShift(shift: Shift): Shift {
         return shiftRepository.save(shift)
+    }
+
+    /**
+     * List shifts for the ADMIN overview, with optional filters and pagination.
+     *
+     * Both `status` and `userId` are optional. Spring Data JPA can't compose
+     * dynamic predicates from method names, so we dispatch by hand to the
+     * narrowest derived query that matches the supplied filters. This keeps
+     * the repository surface trivially testable (no Specifications) at the
+     * cost of a small switch here.
+     */
+    fun getAllShifts(
+        status: ShiftStatus?,
+        userId: Long?,
+        pageable: Pageable,
+    ): Page<Shift> {
+        return when {
+            status != null && userId != null ->
+                shiftRepository.findAllByStatusAndUserId(status, userId, pageable)
+            status != null ->
+                shiftRepository.findAllByStatus(status, pageable)
+            userId != null ->
+                shiftRepository.findAllByUserId(userId, pageable)
+            else ->
+                shiftRepository.findAll(pageable)
+        }
     }
 
     /**
