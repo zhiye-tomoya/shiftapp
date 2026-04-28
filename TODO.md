@@ -1,115 +1,182 @@
-# Backend TODO / Known Pitfalls
-
-このファイルは、現在のバックエンド実装で「動いてはいるが将来踏みそうな地雷」を
-忘れないように記録するメモです。優先度の高いものから順に着手してください。
+コードベース（Shift / ShiftRequest / Auth / ADMIN・STAFF ロール、`clockInTime`/`clockOutTime` ベースのシフトモデル）と `TODO.md` を一通り見たうえで、「これがあると一気に実用に近づく」という機能を、優先度と実装難易度の目安付きで挙げます。
 
 ---
 
-## 🔐 Auth / Token 周り
+## 🥇 優先度: 高（運用に入る前にほぼ必須）
 
-- [ ] **`AuthResponse.token` という命名の整理**
-      現状フィールド名は `token`（= access token）。フロント側の内部呼称は
-      `accessToken` で、`AuthResponseDto` のワイヤー名も `token` に揃え直したばかり。
-      もし将来 `accessToken` にリネームするなら、以下を一括で更新する必要がある:
-  - `src/main/kotlin/com/example/shiftapp/dto/response/AuthResponse.kt`
-  - `src/main/kotlin/com/example/shiftapp/service/AuthService.kt`（`AuthResponse(token = access, ...)`）
-  - `src/main/kotlin/com/example/shiftapp/config/OpenApiConfig.kt`（説明文）
-  - `src/test/kotlin/com/example/shiftapp/controller/AuthControllerIntegrationTest.kt`
-  - `src/test/kotlin/com/example/shiftapp/controller/ShiftControllerIntegrationTest.kt`
-  - `src/test/kotlin/com/example/shiftapp/controller/ShiftRequestControllerIntegrationTest.kt`
-  - フロント `shiftapp_client/src/lib/api/types.ts` の `AuthResponseDto.token`
+### 1. シフト一括作成 (Bulk Create) — ご提案の機能
 
-- [ ] **`/api/auth/refresh` 失敗時のステータス統一**
-      フロントの `apiFetch` は「401 が来たら 1 回だけ refresh、ダメなら anonymous」
-      というルールで動いている。現状は `IllegalArgumentException` 起点で
-      `GlobalExceptionHandler` 経由 → 4xx に変換されるが、明示的に **401** を返すか
-      確認/統一しておくとフロント側の分岐が綺麗になる。
+ADMIN が「来週の月〜金、Aさんを 9:00–18:00 で」みたいに一気に積めるエンドポイント。
 
-- [ ] **401 (未認証) と 403 (権限不足) の区別**
-      Spring Security のデフォルトでは、`Authorization` ヘッダーを付けずに
-      保護リソースを叩くと 403 が返る挙動になっている。
-      `AuthenticationEntryPoint` を設定して「未認証 → 401」を返すようにしておくと、
-      フロントの自動リフレッシュロジックがそのまま動くようになる。
-      （今回の 403 の遠因はフィールド名不一致だったが、ヘッダー欠落時の振る舞いも
-      同時に直しておくと予期せぬ 403 を防げる）
-
-- [ ] **refresh token の `jti` 管理（reuse detection）**
-      `JwtUtil.kt` のコメントにも書かれている通り、現在は署名 + `type=refresh` のみで
-      検証しており、サーバ側に `jti` ストア（Redis or DB）を持っていない。
-      盗難されたリフレッシュトークンの再利用検知をするなら以下が必要:
-  - `refresh_tokens` テーブル（または Redis キー）
-  - `JwtUtil.generateRefreshToken` で `jti` を発行 → 永続化
-  - `AuthService.refresh` で `jti` を検証 → 旧 `jti` を破棄、新 `jti` を発行
-  - 同じ `jti` が二度使われたら **そのユーザーの全 refresh を無効化**（reuse 検知）
-
-- [ ] **CORS + credentials 設定（直接叩き構成にする場合）**
-      現状は Next.js rewrite 越しを前提に `SecurityConfig` に CORS 設定なし。
-      フロントが `NEXT_PUBLIC_API_BASE_URL` を立ててブラウザから直叩きする構成に
-      した瞬間に Cookie が付かない／CORS で弾かれる問題が発生する。
-  - `CorsConfigurationSource` Bean を追加
-  - `allowCredentials = true`、`allowedOrigins` をワイルドカード不可で列挙
-  - `http.cors {}` を有効化
-
-- [ ] **本番 Cookie 属性の切り替え**
-      `application.properties` の `app.auth.refresh-cookie.secure=false` を
-      本番（HTTPS）では `true` に。クロスサイト SPA 構成にするなら
-      `same-site=None` ＋ `secure=true` の組合せが必須。
+- **API 案**
+  - `POST /api/shifts/bulk`（ADMIN only）
+  - リクエスト例:
+    ```jsonc
+    {
+      "userId": 12,
+      "startDate": "2026-05-04",
+      "endDate": "2026-05-08",
+      "daysOfWeek": ["MON", "TUE", "WED", "THU", "FRI"],
+      "clockInLocalTime": "09:00",
+      "clockOutLocalTime": "18:00",
+      "status": "APPROVED", // 一括投入時は最初から承認、も選べる
+      "skipOverlapping": true, // 既存と重複する日はスキップ
+    }
+    ```
+  - レスポンス: `{ created: ShiftResponse[], skipped: { date, reason }[] }`
+- **派生バージョン**
+  - `POST /api/shifts/bulk/explicit`: 日時を配列で渡す版（`shifts: [{userId, clockIn, clockOut}, ...]`）。CSV インポートやテンプレート展開で使う。
+  - `POST /api/shifts/bulk/from-template`: 後述「シフトテンプレート」と組み合わせる。
+- **設計上のポイント**
+  - 1 トランザクションでまとめて `saveAll`、エラーは「全部ロールバック」or「部分成功＋エラー一覧」を選べるオプション (`atomic: true|false`)
+  - 重複チェックは `Shift.isOverlapping` を再利用、ユーザー × 期間で既存シフトを 1 クエリで取得して in-memory 判定（N+1 を避ける）
+  - `daysOfWeek` を絞り込みつつ祝日除外オプション (`excludeHolidays`) も将来追加余地
 
 ---
 
-## 🛡 Security / Authorization
+### 2. シフト編集 / 削除 (`PUT` / `DELETE /api/shifts/{id}`)
 
-- [ ] **`CreateShiftRequest.userId` をクライアントから受け取っている**
-      `ShiftController.createShift` のコメントにも明記されている通り、本来は JWT の
-      `subject` / `userId` claim から取得すべき。今のままだと STAFF が他人の
-      `userId` を指定して勝手にシフトを作れてしまう。
-  - JWT から `userId` を取り出すユーティリティを `JwtAuthenticationFilter` で
-    `Authentication.principal` などに詰めておく
-  - `@AuthenticationPrincipal` か `Authentication` 経由で controller が読む
-  - `CreateShiftRequest` から `userId` を削除（または無視して上書き）
+TODO.md にも残っている宿題。bulk より先に普通の単体編集が無いと、bulk で作って間違えたシフトを直せません。
 
-- [ ] **`ShiftRequestController` の `X-User-Id` ヘッダー依存**
-      同上。`requesterId` をヘッダーから受けるのを廃止し、JWT 経由に統一。
-      フロント側の `withUserIdHeader` オプションも将来的に不要になる。
+- 編集可能フィールド: `clockInTime`, `clockOutTime`, `userId`（オーナー差し替え）
+- ステータス遷移済み（APPROVED 等）の編集をどう扱うかをポリシー化:
+  - ADMIN は強制編集可、STAFF は DRAFT のみ編集可、など。
 
-- [ ] **`ShiftController` 既存エンドポイントの所有者チェック**
-      `submitShift / approveShift / rejectShift` などで「自分のシフトかどうか」の
-      検証が薄い／無い箇所がないか棚卸し。
+### 3. シフトテンプレート (Shift Template)
 
----
+「平日 9-18」「土日 10-22」のような _時間帯テンプレ_ を保存しておき、bulk 作成や個別作成のプリセットとして使う。
 
-## 📦 Endpoint coverage
+- 新エンティティ `ShiftTemplate { id, name, clockInLocalTime, clockOutLocalTime, daysOfWeek, role/タグ }`
+- `POST /api/shifts/bulk/from-template { templateId, userId, startDate, endDate }`
+- UI 側のシフト入力が劇的に楽になる。
 
-フロント `lib/api/shifts.ts` のコメントに記載されている未実装エンドポイント:
+### 4. シフト確定（公開）フロー
 
-- [x] `GET /api/shifts`（admin overview / 全件一覧）
-      ADMIN-only `@PreAuthorize("hasRole('ADMIN')")`、クエリで `status` / `userId`
-      の絞り込みと `page` / `size` / `sort` のページング対応済み。レスポンスは
-      `PageResponse<ShiftResponse>` envelope。フロントは `listAllShifts` /
-      `useAllShifts` から利用。
-- [ ] `PUT /api/shifts/{id}`（時刻・所有者の編集）
-- [ ] `DELETE /api/shifts/{id}`（削除）
+今は DRAFT → SUBMITTED → APPROVED だが、「**月のシフト表として確定して全員に公開**」というステップが無い。
+
+- 新ステータス `PUBLISHED`、または `ShiftSchedule`（月単位の集約）エンティティを導入
+- `POST /api/schedules/{yyyy-MM}/publish` で「その月の APPROVED シフトをまとめて公開」
+- 公開後の編集は版管理 or イベントログ
+
+### 5. 自分のシフトを一覧 (`GET /api/shifts/me`)
+
+今は `/api/shifts/user/{userId}` で他人の userId も叩けてしまう（TODO の「所有者チェック」とつながる）。
+JWT から userId を取って `me` エンドポイントを生やすのが一番安全 & フロントが楽。
 
 ---
 
-## 🧹 Misc / Cleanup
+## 🥈 優先度: 中（プロダクトの "らしさ" が出る機能）
 
-- [ ] `application.properties` の `jwt.expiration`（legacy エイリアス）の段階的削除。
-      `jwt.access.expiration` に一本化し、`build.gradle.kts` / 起動スクリプト等で
-      使っていないことを確認してから消す。
-- [ ] `jwt.secret` の環境変数化。
-      現在 `application.properties` にハードコードされている（コメントに警告あり）。
-      本番投入前に `JWT_SECRET` 環境変数 + `${JWT_SECRET}` プレースホルダ参照へ。
-- [ ] `JwtAuthenticationFilter` の `try/catch` で例外を握りつぶしている件。
-      現在は token 不正でも 200 系で処理が進み、Authorization ヘッダー無しと
-      同じ扱いになる。意図的だがログ運用の観点で見直し余地あり。
+### 6. シフト希望提出 (Shift Preference / Availability)
+
+STAFF が「来週のこの時間帯に入れます／入れません」を出す機能。これがあると ADMIN の bulk 作成が「希望ベースの自動割当」につながる。
+
+- `Availability { userId, date, fromTime, toTime, type: PREFERRED|UNAVAILABLE }`
+- `POST /api/availabilities`、`GET /api/availabilities?userId&from&to`
+- ADMIN 画面で「希望と矛盾する割当」を赤くハイライト
+
+### 7. シフト自動生成 (Auto Scheduling)
+
+6 番の希望と「曜日ごとに最低 N 人必要」みたいな要件 (`StaffingRequirement`) からシフト案を自動生成。
+
+- 最初は素朴な貪欲法 / 整数計画でも十分価値あり
+- `POST /api/schedules/{yyyy-MM}/generate` → DRAFT のシフト群を返す → ADMIN が微調整して publish
+
+### 8. 通知 / イベント (Notifications)
+
+- ドメインイベント: `ShiftSubmitted`, `ShiftApproved`, `SwapRequested`, `SwapApprovedByTarget` など
+- 配信先: メール、Web Push、フロントの未読バッジ用 `GET /api/notifications`
+- まずは DB に `notifications` テーブル作って poll、その後 SSE / WebSocket に拡張
+
+### 9. 出退勤打刻 (Clock-in/Clock-out)
+
+今の `clockInTime` は **予定時刻** だけど、実態には **実打刻時刻** が必要。
+
+- `Shift` に `actualClockInTime`, `actualClockOutTime` を追加 or `Attendance` エンティティを別建て
+- `POST /api/shifts/{id}/clock-in`, `POST /api/shifts/{id}/clock-out`
+- 後述の「労務レポート」「給与計算」につながる主要データになる
+
+### 10. 検索の強化 — 自分のシフトもページング & 期間絞り込み
+
+今 `getShiftsByUser` はリスト全返し。月カレンダー UI を作るとすぐ重くなる。
+
+- `GET /api/shifts/me?from&to&status&page&size&sort`（ADMIN 一覧と対称な形に）
+- `GET /api/shifts?...` の期間フィルタ (`from`/`to`) は ADMIN 用にもう実装済みなので、それを `me` 用にも使えるように共通化
+
+### 11. CSV インポート / エクスポート
+
+- Import: 給与システムや既存スプレッドシートからの一括投入
+  - `POST /api/shifts/import` (multipart/form-data)、行ごとに validation エラーを `{row, message}` で返す
+- Export:
+  - `GET /api/shifts/export.csv?from&to&userId`（ADMIN）
+  - `GET /api/shifts/me/export.csv?from&to`（本人）
+
+### 12. レポート / サマリー
+
+- `GET /api/reports/work-hours?userId&from&to` → 期間内の総勤務時間、夜勤時間、シフト数
+- `GET /api/reports/staffing?from&to` → 日付 × 必要人数 vs 実際の差分
+- 給与計算の足がかりになる
 
 ---
 
-## 📜 履歴メモ
+## 🥉 優先度: 低だがあると "伸びる"
 
-- 2026-04-26: フロントとの DTO 名不一致（`token` vs `accessToken`）により
-  ログイン後の `/api/shifts` POST が 403 になる問題を発見・修正。
-  → フロント側を `token` に揃える形で対応済み。
-  → 同時に「未認証時 401 を返す」「`userId` を JWT から取る」など、
-  関連する設計上の宿題をこのファイルに集約。
+### 13. 監査ログ (Audit Log)
+
+- `who / when / action / shiftId / before / after`
+- ADMIN が「誰がいつ approve した」を追えるように。`@EntityListeners` か `Hibernate Envers`、または独自イベントログテーブル。
+
+### 14. マルチストア / マルチ組織
+
+`User.storeId` は既にあるので、シフトにも `storeId` を持たせて全 API でフィルタ。
+将来チェーン店展開するなら早めに導入したほうが後で楽。
+
+### 15. シフトに `position` / `role` / `skill` タグ
+
+「レジ」「ホール」「キッチン」など職種を持たせると、自動割当やシフト表の見た目が一気に実用的になる。
+
+### 16. 役割ベースのもう一段階細かい権限
+
+- `MANAGER` ロール（店長: 自店舗のみ approve 可）
+- リソースベースの権限: 「自分の所属店舗のシフトだけ編集可能」
+- Spring Security の `@PreAuthorize("@shiftAccess.canEdit(#id, principal)")` パターン
+
+### 17. レート制限 / Idempotency
+
+- ログインや bulk create に Idempotency-Key 対応（同じキーが来たら同じ結果）
+- 一括作成は重い処理になるので保険として欲しい
+
+### 18. WebSocket / SSE でリアルタイム反映
+
+- ADMIN が approve した瞬間に STAFF のカレンダーが切り替わる
+- まずは `GET /api/events/stream` (SSE) が実装が軽くて十分
+
+### 19. i18n / タイムゾーン
+
+- `LocalDateTime` で持っているので、ストア (or User) の `ZoneId` を持って境界で変換するルールを早めに固めたほうが安全
+- DST のないアジア圏中心なら後回し可
+
+### 20. PWA / モバイル: オフラインで打刻、オンライン復帰で同期
+
+- 9 番の打刻機能が育ってからで OK だが、現場アプリとしては差別化ポイント
+
+---
+
+## 推奨ロードマップ（小さく積む順）
+
+1. **Shift `PUT` / `DELETE`**（TODO 解消、bulk の前提）
+2. **`GET /api/shifts/me` ＋所有者チェック**（セキュリティ宿題と同時に解消）
+3. **Bulk Create**（一番要望が出やすい運用機能）
+4. **Shift Template**（bulk の親戚、UI 入力が楽になる）
+5. **公開フロー (PUBLISHED)** または **打刻 (Attendance)** のどちらかを先に  
+   ＝ プロダクトの方向性で分岐。「シフト管理寄り」なら 4→公開、「労務寄り」なら 4→打刻。
+6. **CSV import/export と work-hours レポート**
+7. **希望提出 → 自動生成**
+
+---
+
+ご意見聞きたいポイントは 3 つです:
+
+- **(A)** この中でまず **どれを実装したい** ですか？（特に bulk create はどのバリアント — 「日付＋曜日パターン」型 / 「明示配列」型 / 「テンプレ展開」型 — がイメージに近いですか？）
+- **(B)** プロダクトの方向は **シフト管理（公開・希望・自動割当）寄り** と **労務管理（打刻・勤怠・給与）寄り** のどちらに重心を置きたいですか？
+- **(C)** 上の 1〜5（PUT/DELETE → me → bulk → template → 公開 or 打刻）を順に着手するロードマップでよさそうなら、Act mode に切り替えてもらえれば、まず **`PUT` / `DELETE /api/shifts/{id}`** から実装に入れます。

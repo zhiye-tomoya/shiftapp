@@ -59,6 +59,18 @@ class ShiftControllerIntegrationTest {
             clockOutTime = defaultClockOut,
         )
 
+    /** Variant with explicit times so date-range / sort tests can spread shifts across days. */
+    private fun createShiftRequest(
+        userId: Long,
+        clockIn: LocalDateTime,
+        clockOut: LocalDateTime,
+    ): CreateShiftRequest =
+        CreateShiftRequest(
+            userId = userId,
+            clockInTime = clockIn,
+            clockOutTime = clockOut,
+        )
+
     /**
      * Set up test users before each test.
      * Creates one STAFF user and one ADMIN user, stores their JWT tokens.
@@ -374,6 +386,211 @@ class ShiftControllerIntegrationTest {
         }.andExpect {
             // Then: Access denied (Spring Security wraps in 500 with exception handler)
             status { is5xxServerError() }
+        }
+    }
+
+    @Test
+    fun `should filter all shifts by clockInTime range (from to)`() {
+        // Given: 3 shifts spread across 3 different days
+        val day1 = mockMvc.post("/api/shifts") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                createShiftRequest(
+                    userId = 1L,
+                    clockIn = LocalDateTime.of(2025, 1, 10, 9, 0),
+                    clockOut = LocalDateTime.of(2025, 1, 10, 17, 0),
+                )
+            )
+        }.andReturn().response.contentAsString
+        val day1Id = objectMapper.readTree(day1)["id"].asLong()
+
+        val day2 = mockMvc.post("/api/shifts") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                createShiftRequest(
+                    userId = 1L,
+                    clockIn = LocalDateTime.of(2025, 1, 15, 9, 0),
+                    clockOut = LocalDateTime.of(2025, 1, 15, 17, 0),
+                )
+            )
+        }.andReturn().response.contentAsString
+        val day2Id = objectMapper.readTree(day2)["id"].asLong()
+
+        mockMvc.post("/api/shifts") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                createShiftRequest(
+                    userId = 1L,
+                    clockIn = LocalDateTime.of(2025, 1, 20, 9, 0),
+                    clockOut = LocalDateTime.of(2025, 1, 20, 17, 0),
+                )
+            )
+        }
+
+        // When: ADMIN narrows to the middle window 2025-01-12 .. 2025-01-18
+        mockMvc.get("/api/shifts?from=2025-01-12T00:00:00&to=2025-01-18T23:59:59") {
+            header("Authorization", "Bearer $adminToken")
+        }.andExpect {
+            // Then: only day-2 shift comes back
+            status { isOk() }
+            jsonPath("$.content.length()") { value(1) }
+            jsonPath("$.totalElements") { value(1) }
+            jsonPath("$.content[0].id") { value(day2Id) }
+        }
+
+        // And: open-ended `from` returns shifts on or after the boundary
+        mockMvc.get("/api/shifts?from=2025-01-15T00:00:00") {
+            header("Authorization", "Bearer $adminToken")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.totalElements") { value(2) }
+        }
+
+        // And: open-ended `to` returns shifts on or before the boundary
+        mockMvc.get("/api/shifts?to=2025-01-10T23:59:59") {
+            header("Authorization", "Bearer $adminToken")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.totalElements") { value(1) }
+            jsonPath("$.content[0].id") { value(day1Id) }
+        }
+    }
+
+    @Test
+    fun `should sort all shifts by clockInTime ascending when explicitly requested`() {
+        // Given: 3 shifts on different days, posted out of order
+        val mid = mockMvc.post("/api/shifts") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                createShiftRequest(
+                    userId = 1L,
+                    clockIn = LocalDateTime.of(2025, 1, 15, 9, 0),
+                    clockOut = LocalDateTime.of(2025, 1, 15, 17, 0),
+                )
+            )
+        }.andReturn().response.contentAsString
+        val midId = objectMapper.readTree(mid)["id"].asLong()
+
+        val first = mockMvc.post("/api/shifts") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                createShiftRequest(
+                    userId = 1L,
+                    clockIn = LocalDateTime.of(2025, 1, 10, 9, 0),
+                    clockOut = LocalDateTime.of(2025, 1, 10, 17, 0),
+                )
+            )
+        }.andReturn().response.contentAsString
+        val firstId = objectMapper.readTree(first)["id"].asLong()
+
+        val last = mockMvc.post("/api/shifts") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                createShiftRequest(
+                    userId = 1L,
+                    clockIn = LocalDateTime.of(2025, 1, 20, 9, 0),
+                    clockOut = LocalDateTime.of(2025, 1, 20, 17, 0),
+                )
+            )
+        }.andReturn().response.contentAsString
+        val lastId = objectMapper.readTree(last)["id"].asLong()
+
+        // When: ADMIN asks for clockInTime ascending
+        mockMvc.get("/api/shifts?sort=clockInTime,asc") {
+            header("Authorization", "Bearer $adminToken")
+        }.andExpect {
+            // Then: chronologically earliest first
+            status { isOk() }
+            jsonPath("$.content.length()") { value(3) }
+            jsonPath("$.content[0].id") { value(firstId) }
+            jsonPath("$.content[1].id") { value(midId) }
+            jsonPath("$.content[2].id") { value(lastId) }
+        }
+    }
+
+    @Test
+    fun `should default to clockInTime descending when no sort is supplied`() {
+        // Given: 2 shifts on different days
+        val older = mockMvc.post("/api/shifts") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                createShiftRequest(
+                    userId = 1L,
+                    clockIn = LocalDateTime.of(2025, 1, 10, 9, 0),
+                    clockOut = LocalDateTime.of(2025, 1, 10, 17, 0),
+                )
+            )
+        }.andReturn().response.contentAsString
+        val olderId = objectMapper.readTree(older)["id"].asLong()
+
+        val newer = mockMvc.post("/api/shifts") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                createShiftRequest(
+                    userId = 1L,
+                    clockIn = LocalDateTime.of(2025, 2, 1, 9, 0),
+                    clockOut = LocalDateTime.of(2025, 2, 1, 17, 0),
+                )
+            )
+        }.andReturn().response.contentAsString
+        val newerId = objectMapper.readTree(newer)["id"].asLong()
+
+        // When: ADMIN lists with no sort param
+        mockMvc.get("/api/shifts") {
+            header("Authorization", "Bearer $adminToken")
+        }.andExpect {
+            // Then: newest first by default
+            status { isOk() }
+            jsonPath("$.content[0].id") { value(newerId) }
+            jsonPath("$.content[1].id") { value(olderId) }
+        }
+    }
+
+    @Test
+    fun `should silently ignore unknown sort fields and use the default ordering`() {
+        // Given: 2 shifts on different days
+        val older = mockMvc.post("/api/shifts") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                createShiftRequest(
+                    userId = 1L,
+                    clockIn = LocalDateTime.of(2025, 1, 10, 9, 0),
+                    clockOut = LocalDateTime.of(2025, 1, 10, 17, 0),
+                )
+            )
+        }.andReturn().response.contentAsString
+        val olderId = objectMapper.readTree(older)["id"].asLong()
+
+        val newer = mockMvc.post("/api/shifts") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                createShiftRequest(
+                    userId = 1L,
+                    clockIn = LocalDateTime.of(2025, 2, 1, 9, 0),
+                    clockOut = LocalDateTime.of(2025, 2, 1, 17, 0),
+                )
+            )
+        }.andReturn().response.contentAsString
+        val newerId = objectMapper.readTree(newer)["id"].asLong()
+
+        // When: ADMIN passes a sort field that isn't whitelisted
+        mockMvc.get("/api/shifts?sort=password,asc") {
+            header("Authorization", "Bearer $adminToken")
+        }.andExpect {
+            // Then: request still succeeds (no JPA error) and falls back to clockInTime DESC
+            status { isOk() }
+            jsonPath("$.content[0].id") { value(newerId) }
+            jsonPath("$.content[1].id") { value(olderId) }
         }
     }
 

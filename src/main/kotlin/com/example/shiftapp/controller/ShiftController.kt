@@ -9,11 +9,14 @@ import com.example.shiftapp.dto.response.ShiftResponse
 import com.example.shiftapp.service.ShiftService
 import jakarta.validation.Valid
 import org.springframework.data.domain.Pageable
+import org.springframework.data.domain.Sort
 import org.springframework.data.web.PageableDefault
+import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.*
+import java.time.LocalDateTime
 
 /**
  * Controller for shift operations.
@@ -106,9 +109,13 @@ class ShiftController(
      * Query params (all optional):
      *  - `status` filter on shift status (DRAFT/SUBMITTED/APPROVED/REJECTED)
      *  - `userId` filter on owner
+     *  - `from`   inclusive lower bound on `clockInTime` (ISO-8601, e.g. `2025-01-15T00:00:00`)
+     *  - `to`     inclusive upper bound on `clockInTime` (ISO-8601)
      *  - `page`   0-based page index (default 0)
      *  - `size`   page size (default 20)
-     *  - `sort`   Spring's standard `sort=field,asc|desc` syntax
+     *  - `sort`   Spring's standard `sort=field,asc|desc` syntax.
+     *             Allowed fields: `id`, `status`, `userId`, `clockInTime`, `clockOutTime`.
+     *             Unknown fields are silently ignored; default is `clockInTime,desc`.
      *
      * Response: [PageResponse] of [ShiftResponse].
      */
@@ -117,9 +124,17 @@ class ShiftController(
     fun getAllShifts(
         @RequestParam(required = false) status: ShiftStatus?,
         @RequestParam(required = false) userId: Long?,
-        @PageableDefault(size = 20) pageable: Pageable,
+        @RequestParam(required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) from: LocalDateTime?,
+        @RequestParam(required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) to: LocalDateTime?,
+        @PageableDefault(
+            size = 20,
+            sort = ["clockInTime"],
+            direction = Sort.Direction.DESC,
+        ) pageable: Pageable,
     ): ResponseEntity<PageResponse<ShiftResponse>> {
-        val page = shiftService.getAllShifts(status, userId, pageable)
+        val page = shiftService.getAllShifts(status, userId, from, to, pageable)
         return ResponseEntity.ok(PageResponse.from(page) { it.toResponse() })
     }
 
