@@ -55,22 +55,28 @@ class JwtAuthenticationFilter(
             val jwt = authHeader.substring(7)
 
             // 4. Extract user info from token
-            val email = jwtUtil.extractEmail(jwt)
-            val role = jwtUtil.extractRole(jwt)
+            val email  = jwtUtil.extractEmail(jwt)
+            val userId = jwtUtil.extractUserId(jwt)
+            val role   = jwtUtil.extractRole(jwt)
 
             // 5. If not already authenticated, set up authentication
             if (SecurityContextHolder.getContext().authentication == null) {
-                // Create authorities (Spring Security needs "ROLE_" prefix)
-                val authorities = listOf(SimpleGrantedAuthority("ROLE_$role"))
+                // Wrap the JWT identity claims in a typed principal so controllers
+                // can pull the userId out via @AuthenticationPrincipal — no per-request
+                // DB lookup required, the access token already carries everything we need.
+                val principal = AuthenticatedUser(userId = userId, email = email, role = role)
 
-                // Create authentication token
+                // UserDetails already exposes "ROLE_<role>" via getAuthorities(),
+                // but we keep the explicit list for clarity and future-proofing.
+                val authorities = principal.authorities
+
                 val authToken = UsernamePasswordAuthenticationToken(
-                    email,
+                    principal,
                     null,
                     authorities
                 )
 
-                // Add request details
+                // Add request details (IP, session id, etc.)
                 authToken.details = WebAuthenticationDetailsSource().buildDetails(request)
 
                 // Set authentication in Security Context
@@ -78,6 +84,7 @@ class JwtAuthenticationFilter(
                 SecurityContextHolder.getContext().authentication = authToken
             }
         } catch (e: Exception) {
+
             // Token validation failed (expired, invalid signature, etc.)
             logger.error("JWT validation error: ${e.message}")
             // We don't stop the request, just log the error

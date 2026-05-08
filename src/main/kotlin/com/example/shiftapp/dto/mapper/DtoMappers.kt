@@ -2,8 +2,13 @@ package com.example.shiftapp.dto.mapper
 
 import com.example.shiftapp.domain.Shift
 import com.example.shiftapp.domain.ShiftRequest
-import com.example.shiftapp.dto.response.ShiftResponse
+import com.example.shiftapp.dto.response.BulkCreateShiftResponse
+import com.example.shiftapp.dto.response.BulkSubmitShiftResponse
 import com.example.shiftapp.dto.response.ShiftRequestResponse
+import com.example.shiftapp.dto.response.ShiftResponse
+import com.example.shiftapp.service.BulkCreateOutcome
+import com.example.shiftapp.service.BulkSubmitOutcome
+
 
 /**
  * Extension functions to map domain models to DTOs.
@@ -36,3 +41,21 @@ fun ShiftRequest.toResponse(): ShiftRequestResponse {
         status = this.status.name
     )
 }
+
+/**
+ * Map a service-level [BulkCreateOutcome] to its API DTO. We only need to
+ * convert the `Shift` entities; `skipped` is already an API-shaped list
+ * (see the layering note in [com.example.shiftapp.service.ShiftService.bulkCreate]).
+ */
+fun BulkCreateOutcome.toResponse(): BulkCreateShiftResponse =
+    BulkCreateShiftResponse(
+        created = this.created.map { it.toResponse() },
+        skipped = this.skipped,
+    )
+
+fun BulkSubmitOutcome.toResponse(): BulkSubmitShiftResponse =
+    BulkSubmitShiftResponse(
+        submitted = this.submitted.map { it.toResponse() },
+        skipped = this.skipped,
+    )
+

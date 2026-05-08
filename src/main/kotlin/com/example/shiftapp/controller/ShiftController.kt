@@ -3,9 +3,14 @@ package com.example.shiftapp.controller
 import com.example.shiftapp.domain.Shift
 import com.example.shiftapp.domain.ShiftStatus
 import com.example.shiftapp.dto.mapper.toResponse
+import com.example.shiftapp.dto.request.BulkCreateShiftRequest
+import com.example.shiftapp.dto.request.BulkSubmitShiftRequest
 import com.example.shiftapp.dto.request.CreateShiftRequest
+import com.example.shiftapp.dto.response.BulkCreateShiftResponse
+import com.example.shiftapp.dto.response.BulkSubmitShiftResponse
 import com.example.shiftapp.dto.response.PageResponse
 import com.example.shiftapp.dto.response.ShiftResponse
+import com.example.shiftapp.security.AuthenticatedUser
 import com.example.shiftapp.service.ShiftService
 import jakarta.validation.Valid
 import org.springframework.data.domain.Pageable
@@ -15,8 +20,10 @@ import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
+import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.*
 import java.time.LocalDateTime
+
 
 /**
  * Controller for shift operations.
@@ -164,4 +171,55 @@ class ShiftController(
         val shifts = shiftService.getShiftsByUserId(userId, status)
         return ResponseEntity.ok(shifts.map { it.toResponse() })
     }
+
+    // -----------------------------------------------------------------
+    // Bulk operations (TODO §1)
+    // -----------------------------------------------------------------
+
+    /**
+     * Create many DRAFT shifts for the **caller** in one round-trip.
+     *
+     * The owning user is taken from the JWT principal, NOT from the body —
+     * a STAFF user can never bulk-create shifts on behalf of someone else.
+     * (An ADMIN doing the same operation for another user would be a future
+     * `POST /api/admin/shifts/bulk` endpoint, intentionally separate.)
+     *
+     * Response: 201 Created with [BulkCreateShiftResponse], whose `created`
+     * and `skipped` arrays describe the partial-success outcome. With
+     * `atomic = true` in the request, any skip raises and the whole batch is
+     * rolled back (the global exception handler maps it to 409).
+     */
+    @PostMapping("/bulk")
+    @PreAuthorize("isAuthenticated()")
+    fun bulkCreate(
+        @Valid @RequestBody request: BulkCreateShiftRequest,
+        @AuthenticationPrincipal principal: AuthenticatedUser,
+    ): ResponseEntity<BulkCreateShiftResponse> {
+        val outcome = shiftService.bulkCreate(principal.userId, request)
+        return ResponseEntity.status(HttpStatus.CREATED).body(outcome.toResponse())
+    }
+
+    /**
+     * Promote many DRAFT shifts to SUBMITTED in one round-trip.
+     *
+     * PATCH because we're partially updating many existing resources at once
+     * (the single-shift counterpart `POST /api/shifts/{id}/submit` is an
+     * action endpoint, which is fine for one resource but doesn't compose
+     * cleanly when the unit of work is a list of ids).
+     *
+     * Ownership and status are validated server-side per id; the caller
+     * receives back exactly which ids transitioned and which were dropped
+     * (with a typed reason). With `atomic = true`, any skip raises and the
+     * whole batch is rolled back.
+     */
+    @PatchMapping("/bulk/submit")
+    @PreAuthorize("isAuthenticated()")
+    fun bulkSubmit(
+        @Valid @RequestBody request: BulkSubmitShiftRequest,
+        @AuthenticationPrincipal principal: AuthenticatedUser,
+    ): ResponseEntity<BulkSubmitShiftResponse> {
+        val outcome = shiftService.bulkSubmit(principal.userId, request)
+        return ResponseEntity.ok(outcome.toResponse())
+    }
 }
+

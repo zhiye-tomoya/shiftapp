@@ -2,9 +2,11 @@ package com.example.shiftapp.repository
 
 import com.example.shiftapp.domain.Shift
 import com.example.shiftapp.domain.ShiftStatus
+import java.time.LocalDateTime
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor
 import org.springframework.stereotype.Repository
+
 
 /**
  * Spring Data JPA repository for Shift persistence.
@@ -28,6 +30,21 @@ interface ShiftRepository : JpaRepository<Shift, Long>, JpaSpecificationExecutor
     // ---- non-paged (used by per-user / per-status read paths) ----
     fun findAllByUserId(userId: Long): List<Shift>
     fun findAllByStatus(status: ShiftStatus): List<Shift>
-    fun findByUserIdAndStatus(userId: Long, status: ShiftStatus): List<Shift> 
+    fun findByUserIdAndStatus(userId: Long, status: ShiftStatus): List<Shift>
+
+    /**
+     * Fetch every shift owned by [userId] whose `clockInTime` falls within the
+     * inclusive window [from, to].
+     *
+     * Used by the bulk-create flow to detect overlap with already-saved shifts
+     * in a single round-trip — avoids N+1 fetches when expanding e.g. a Mon–Fri
+     * pattern into 5 per-day candidates.
+     */
+    fun findAllByUserIdAndClockInTimeBetween(
+        userId: Long,
+        from: LocalDateTime,
+        to: LocalDateTime,
+    ): List<Shift>
 }
+
 

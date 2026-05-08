@@ -1,5 +1,7 @@
 package com.example.shiftapp.controller
 
+import com.example.shiftapp.dto.request.BulkCreateShiftRequest
+import com.example.shiftapp.dto.request.BulkSubmitShiftRequest
 import com.example.shiftapp.dto.request.CreateShiftRequest
 import com.example.shiftapp.dto.request.RegisterRequest
 import com.example.shiftapp.repository.ShiftRepository
@@ -14,8 +16,13 @@ import org.springframework.http.MediaType
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
+import java.time.DayOfWeek
+import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
+
 
 /**
  * Integration tests for ShiftController.
@@ -45,6 +52,9 @@ class ShiftControllerIntegrationTest {
 
     private lateinit var staffToken: String
     private lateinit var adminToken: String
+    private var staffUserId: Long = 0L
+    private var adminUserId: Long = 0L
+
 
     /**
      * Default fixture times used by tests that don't care about the specific values.
@@ -89,7 +99,9 @@ class ShiftControllerIntegrationTest {
             )
         }.andReturn().response.contentAsString
 
-        staffToken = objectMapper.readTree(staffResponse)["token"].asText()
+        val staffNode = objectMapper.readTree(staffResponse)
+        staffToken = staffNode["token"].asText()
+        staffUserId = staffNode["userId"].asLong()
 
         // Register ADMIN user
         val adminResponse = mockMvc.post("/api/auth/register") {
@@ -99,8 +111,11 @@ class ShiftControllerIntegrationTest {
             )
         }.andReturn().response.contentAsString
 
-        adminToken = objectMapper.readTree(adminResponse)["token"].asText()
+        val adminNode = objectMapper.readTree(adminResponse)
+        adminToken = adminNode["token"].asText()
+        adminUserId = adminNode["userId"].asLong()
     }
+
 
     @Test
     fun `should create shift when authenticated`() {
@@ -307,9 +322,12 @@ class ShiftControllerIntegrationTest {
             jsonPath("$.content.length()") { value(2) }
             jsonPath("$.totalElements") { value(2) }
             jsonPath("$.page") { value(0) }
-            jsonPath("$.size") { value(20) }
+            // ShiftController declares @PageableDefault(size = 100), so the
+            // page envelope reports 100 when no `size` is sent by the client.
+            jsonPath("$.size") { value(100) }
         }
     }
+
 
     @Test
     fun `should filter all shifts by status and userId`() {
@@ -614,4 +632,184 @@ class ShiftControllerIntegrationTest {
             jsonPath("$.message") { value("Only SUBMITTED shifts can be approved (was DRAFT)") }
         }
     }
+
+    /** A Mon–Fri 09–18 bulk-create request anchored to a known Monday in Jan 2025. */
+    private fun bulkMondayToFriday(
+        skipOverlapping: Boolean = true,
+        atomic: Boolean = false,
+    ) = BulkCreateShiftRequest(
+        startDate = LocalDate.of(2025, 1, 13),  // Monday
+        endDate   = LocalDate.of(2025, 1, 17),  // Friday
+        daysOfWeek = setOf(
+            DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY,
+            DayOfWeek.THURSDAY, DayOfWeek.FRIDAY,
+        ),
+        clockInLocalTime  = LocalTime.of(9, 0),
+        clockOutLocalTime = LocalTime.of(18, 0),
+        skipOverlapping = skipOverlapping,
+        atomic = atomic,
+    )
+
+    @Test
+    fun `bulk create should persist five DRAFT shifts owned by the caller`() {
+        // When: STAFF posts a Mon-Fri bulk-create
+        mockMvc.post("/api/shifts/bulk") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(bulkMondayToFriday())
+        }.andExpect {
+            // Then: 201 Created, 5 created shifts, all owned by the caller's userId
+            status { isCreated() }
+            jsonPath("$.created.length()") { value(5) }
+            jsonPath("$.skipped.length()") { value(0) }
+            jsonPath("$.created[0].userId") { value(staffUserId) }
+            jsonPath("$.created[0].status") { value("DRAFT") }
+        }
+
+        // And: the shifts are actually persisted under the caller — list-by-user confirms it
+        mockMvc.get("/api/shifts/user/$staffUserId") {
+            header("Authorization", "Bearer $staffToken")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.length()") { value(5) }
+        }
+    }
+
+    @Test
+    fun `bulk create should reject unauthenticated requests`() {
+        mockMvc.post("/api/shifts/bulk") {
+            contentType = MediaType.APPLICATION_JSON
+            content = objectMapper.writeValueAsString(bulkMondayToFriday())
+        }.andExpect {
+            status { isForbidden() }
+        }
+    }
+
+    @Test
+    fun `bulk create should report skipped days when an existing shift overlaps`() {
+        // Given: a Wed shift already exists for the caller
+        mockMvc.post("/api/shifts") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                createShiftRequest(
+                    userId = staffUserId,
+                    clockIn  = LocalDateTime.of(2025, 1, 15, 10, 0),  // Wed in window
+                    clockOut = LocalDateTime.of(2025, 1, 15, 16, 0),
+                )
+            )
+        }
+
+        // When: STAFF bulk-creates Mon-Fri (Wed should be skipped, not 4 created)
+        mockMvc.post("/api/shifts/bulk") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(bulkMondayToFriday())
+        }.andExpect {
+            status { isCreated() }
+            jsonPath("$.created.length()") { value(4) }
+            jsonPath("$.skipped.length()") { value(1) }
+            jsonPath("$.skipped[0].date") { value("2025-01-15") }
+            jsonPath("$.skipped[0].reason") { value("OVERLAPPING_EXISTING_SHIFT") }
+        }
+    }
+
+    @Test
+    fun `bulk create with atomic=true should roll back the whole batch on overlap`() {
+        // Given: Wed already taken
+        mockMvc.post("/api/shifts") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                createShiftRequest(
+                    userId = staffUserId,
+                    clockIn  = LocalDateTime.of(2025, 1, 15, 10, 0),
+                    clockOut = LocalDateTime.of(2025, 1, 15, 16, 0),
+                )
+            )
+        }
+
+        // When: bulk-create with atomic=true
+        mockMvc.post("/api/shifts/bulk") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(bulkMondayToFriday(atomic = true))
+        }.andExpect {
+            // Then: 409 Conflict (IllegalStateException → GlobalExceptionHandler)
+            status { isConflict() }
+        }
+
+        // And: the original Wed shift remains, but no Mon/Tue/Thu/Fri were persisted
+        mockMvc.get("/api/shifts/user/$staffUserId") {
+            header("Authorization", "Bearer $staffToken")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.length()") { value(1) } // only the pre-existing Wed shift
+        }
+    }
+
+    @Test
+    fun `bulk submit should flip caller-owned DRAFT shifts to SUBMITTED`() {
+        // Given: 3 DRAFT shifts created via bulk-create
+        val bulkResponse = mockMvc.post("/api/shifts/bulk") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                BulkCreateShiftRequest(
+                    startDate = LocalDate.of(2025, 1, 13),
+                    endDate   = LocalDate.of(2025, 1, 15),
+                    daysOfWeek = null,
+                    clockInLocalTime  = LocalTime.of(9, 0),
+                    clockOutLocalTime = LocalTime.of(18, 0),
+                )
+            )
+        }.andReturn().response.contentAsString
+
+        val createdIds = objectMapper.readTree(bulkResponse)["created"]
+            .map { it["id"].asLong() }
+
+        // When: STAFF bulk-submits all of them
+        mockMvc.patch("/api/shifts/bulk/submit") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                BulkSubmitShiftRequest(shiftIds = createdIds)
+            )
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.submitted.length()") { value(3) }
+            jsonPath("$.skipped.length()") { value(0) }
+            jsonPath("$.submitted[0].status") { value("SUBMITTED") }
+        }
+    }
+
+    @Test
+    fun `bulk submit should refuse to flip another user's shifts`() {
+        // Given: a DRAFT shift owned by ADMIN (we hijack the admin token to create it
+        //        with the admin's userId, then ask STAFF to flip it).
+        val createResponse = mockMvc.post("/api/shifts") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $adminToken")
+            content = objectMapper.writeValueAsString(createShiftRequest(userId = adminUserId))
+        }.andReturn().response.contentAsString
+        val foreignId = objectMapper.readTree(createResponse)["id"].asLong()
+
+        // When: STAFF tries to bulk-submit an id they don't own
+        mockMvc.patch("/api/shifts/bulk/submit") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                BulkSubmitShiftRequest(shiftIds = listOf(foreignId))
+            )
+        }.andExpect {
+            // Then: nothing is submitted; the id is reported in `skipped` with the
+            // typed reason — no IDOR, no half-applied state.
+            status { isOk() }
+            jsonPath("$.submitted.length()") { value(0) }
+            jsonPath("$.skipped.length()") { value(1) }
+            jsonPath("$.skipped[0].shiftId") { value(foreignId) }
+            jsonPath("$.skipped[0].reason") { value("NOT_OWNED_BY_REQUESTER") }
+        }
+    }
 }
+
