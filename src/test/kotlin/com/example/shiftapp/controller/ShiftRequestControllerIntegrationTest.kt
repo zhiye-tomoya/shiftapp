@@ -317,10 +317,12 @@ class ShiftRequestControllerIntegrationTest {
         mockMvc.post("/api/requests/$requestId/approve/admin") {
             header("Authorization", "Bearer $staff1Token")
         }.andExpect {
-            // Then: Access denied (Spring Security wraps in 500 with exception handler)
-            status { is5xxServerError() }
+            // Then: 403 Forbidden — @PreAuthorize denies non-ADMIN, mapped via
+            // GlobalExceptionHandler.handleAccessDeniedException.
+            status { isForbidden() }
         }
     }
+
 
     @Test
     fun `should get requests by requester`() {

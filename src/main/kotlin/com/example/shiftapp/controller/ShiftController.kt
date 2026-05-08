@@ -6,6 +6,9 @@ import com.example.shiftapp.dto.mapper.toResponse
 import com.example.shiftapp.dto.request.BulkCreateShiftRequest
 import com.example.shiftapp.dto.request.BulkSubmitShiftRequest
 import com.example.shiftapp.dto.request.CreateShiftRequest
+import com.example.shiftapp.dto.request.ReplaceShiftRequest
+import com.example.shiftapp.dto.request.UpdateShiftRequest
+
 import com.example.shiftapp.dto.response.BulkCreateShiftResponse
 import com.example.shiftapp.dto.response.BulkSubmitShiftResponse
 import com.example.shiftapp.dto.response.PageResponse
@@ -173,8 +176,101 @@ class ShiftController(
     }
 
     // -----------------------------------------------------------------
+    // Edit / delete (TODO §2)
+    // -----------------------------------------------------------------
+
+    /**
+     * Replace the editable fields of an existing shift (full update).
+     *
+     * Idempotent by design: every editable field is required. Only mutates
+     * `clockInTime`, `clockOutTime` and `userId` — `status` belongs to the
+     * lifecycle endpoints (`/submit`, `/approve`, `/reject`).
+     *
+     * Permissions (enforced server-side):
+     *  - STAFF: only own DRAFT shifts; cannot reassign `userId`
+     *  - ADMIN: any shift in any status; may reassign `userId`
+     *
+     * Optimistic locking: include `version` in the body to fail fast (409)
+     * if someone else updated the row since you read it.
+     *
+     * Responses:
+     *  - 200 OK with [ShiftResponse]
+     *  - 400 if `clockOutTime <= clockInTime`
+     *  - 403 on permission violation
+     *  - 409 if shift not found / version mismatch
+     */
+    @PutMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
+    fun replaceShift(
+        @PathVariable id: Long,
+        @Valid @RequestBody request: ReplaceShiftRequest,
+        @AuthenticationPrincipal principal: AuthenticatedUser,
+    ): ResponseEntity<ShiftResponse> {
+        val updated = shiftService.updateShift(
+            shiftId = id,
+            principal = principal,
+            newClockInTime = request.clockInTime,
+            newClockOutTime = request.clockOutTime,
+            newUserId = request.userId,
+            expectedVersion = request.version,
+        )
+        return ResponseEntity.ok(updated.toResponse())
+    }
+
+    /**
+     * Partially update an existing shift (PATCH).
+     *
+     * All body fields are optional but at least one of `clockInTime`,
+     * `clockOutTime`, `userId` must be present (validated by the DTO).
+     *
+     * Permissions and optimistic-lock semantics are identical to
+     * [replaceShift] — the two endpoints share the same service-layer code,
+     * differing only in DTO shape.
+     */
+    @PatchMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
+    fun updateShift(
+        @PathVariable id: Long,
+        @Valid @RequestBody request: UpdateShiftRequest,
+        @AuthenticationPrincipal principal: AuthenticatedUser,
+    ): ResponseEntity<ShiftResponse> {
+        val updated = shiftService.updateShift(
+            shiftId = id,
+            principal = principal,
+            newClockInTime = request.clockInTime,
+            newClockOutTime = request.clockOutTime,
+            newUserId = request.userId,
+            expectedVersion = request.version,
+        )
+        return ResponseEntity.ok(updated.toResponse())
+    }
+
+    /**
+     * Delete a shift.
+     *
+     * Permissions:
+     *  - STAFF: only own DRAFT shifts
+     *  - ADMIN: any shift in any status (force-delete)
+     *
+     * Responses:
+     *  - 204 No Content on success
+     *  - 403 on permission violation
+     *  - 409 if shift not found
+     */
+    @DeleteMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
+    fun deleteShift(
+        @PathVariable id: Long,
+        @AuthenticationPrincipal principal: AuthenticatedUser,
+    ): ResponseEntity<Void> {
+        shiftService.deleteShift(id, principal)
+        return ResponseEntity.noContent().build()
+    }
+
+    // -----------------------------------------------------------------
     // Bulk operations (TODO §1)
     // -----------------------------------------------------------------
+
 
     /**
      * Create many DRAFT shifts for the **caller** in one round-trip.

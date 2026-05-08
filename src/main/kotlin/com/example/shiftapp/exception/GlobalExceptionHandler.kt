@@ -1,12 +1,15 @@
 package com.example.shiftapp.exception
 
 import com.example.shiftapp.dto.response.ErrorResponse
+import org.springframework.dao.OptimisticLockingFailureException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.security.access.AccessDeniedException
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.context.request.WebRequest
+
 
 /**
  * Global exception handler for all REST controllers.
@@ -96,6 +99,64 @@ class GlobalExceptionHandler {
     }
 
     /**
+     * Handle Spring Security's [AccessDeniedException].
+     *
+     * Status: 403 Forbidden
+     *
+     * Triggered both by `@PreAuthorize` failures (e.g. STAFF hitting an
+     * ADMIN-only endpoint) and by service-layer permission checks (e.g.
+     * STAFF trying to edit someone else's shift, or to edit a non-DRAFT
+     * shift). 403 is the correct HTTP semantic — "the server understood
+     * the request but refuses to authorize it" — distinct from 401
+     * (no/invalid auth) and 500 (server bug).
+     *
+     * This handler must be more specific than [handleGeneralException]
+     * for `@ExceptionHandler` resolution to pick it.
+     */
+    @ExceptionHandler(AccessDeniedException::class)
+    fun handleAccessDeniedException(
+        ex: AccessDeniedException,
+        request: WebRequest,
+    ): ResponseEntity<ErrorResponse> {
+        val error = ErrorResponse(
+            status = HttpStatus.FORBIDDEN.value(),
+            error = "Forbidden",
+            message = ex.message ?: "Access is denied",
+            path = request.getDescription(false).substringAfter("uri="),
+        )
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error)
+    }
+
+    /**
+     * Handle JPA's [OptimisticLockingFailureException].
+     *
+     * Status: 409 Conflict
+     *
+     * Two situations land here:
+     *  1. Service-level pre-check: the caller sent a `version` in
+     *     `PUT/PATCH /api/shifts/{id}` that no longer matches the DB.
+     *  2. Backstop at flush: even when the caller skipped the version
+     *     field, Hibernate's `@Version` column will trip if a concurrent
+     *     transaction won the race.
+     *
+     * In both cases, the right answer for the client is the same: re-read
+     * the current shift, re-apply your edit, and retry.
+     */
+    @ExceptionHandler(OptimisticLockingFailureException::class)
+    fun handleOptimisticLockingFailureException(
+        ex: OptimisticLockingFailureException,
+        request: WebRequest,
+    ): ResponseEntity<ErrorResponse> {
+        val error = ErrorResponse(
+            status = HttpStatus.CONFLICT.value(),
+            error = "Conflict",
+            message = ex.message ?: "Resource was modified by another transaction",
+            path = request.getDescription(false).substringAfter("uri="),
+        )
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(error)
+    }
+
+    /**
      * Handle all other exceptions (catch-all).
      *
      * Status: 500 Internal Server Error
@@ -117,3 +178,4 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error)
     }
 }
+

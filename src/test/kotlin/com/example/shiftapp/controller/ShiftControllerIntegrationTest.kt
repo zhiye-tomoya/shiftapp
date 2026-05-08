@@ -4,6 +4,8 @@ import com.example.shiftapp.dto.request.BulkCreateShiftRequest
 import com.example.shiftapp.dto.request.BulkSubmitShiftRequest
 import com.example.shiftapp.dto.request.CreateShiftRequest
 import com.example.shiftapp.dto.request.RegisterRequest
+import com.example.shiftapp.dto.request.ReplaceShiftRequest
+import com.example.shiftapp.dto.request.UpdateShiftRequest
 import com.example.shiftapp.repository.ShiftRepository
 import com.example.shiftapp.repository.UserRepository
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -15,9 +17,12 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.http.MediaType
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.put
+
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -219,10 +224,12 @@ class ShiftControllerIntegrationTest {
         mockMvc.post("/api/shifts/$shiftId/approve") {
             header("Authorization", "Bearer $staffToken")
         }.andExpect {
-            // Then: Access denied (Spring Security wraps in 500 with exception handler)
-            status { is5xxServerError() }
+            // Then: 403 Forbidden — @PreAuthorize denies STAFF, GlobalExceptionHandler
+            // maps Spring Security's AccessDeniedException to 403.
+            status { isForbidden() }
         }
     }
+
 
     @Test
     fun `should allow ADMIN to reject shift`() {
@@ -402,10 +409,12 @@ class ShiftControllerIntegrationTest {
         mockMvc.get("/api/shifts") {
             header("Authorization", "Bearer $staffToken")
         }.andExpect {
-            // Then: Access denied (Spring Security wraps in 500 with exception handler)
-            status { is5xxServerError() }
+            // Then: 403 Forbidden — @PreAuthorize denies non-ADMIN, mapped via
+            // GlobalExceptionHandler.handleAccessDeniedException.
+            status { isForbidden() }
         }
     }
+
 
     @Test
     fun `should filter all shifts by clockInTime range (from to)`() {
@@ -811,5 +820,301 @@ class ShiftControllerIntegrationTest {
             jsonPath("$.skipped[0].reason") { value("NOT_OWNED_BY_REQUESTER") }
         }
     }
+
+    // -----------------------------------------------------------------
+    // PUT / PATCH / DELETE — TODO §2 (edit & delete)
+    // -----------------------------------------------------------------
+
+    /** Helper: create a DRAFT shift owned by [ownerId] using [token] and return its id. */
+    private fun createDraftShift(
+        ownerId: Long,
+        token: String,
+        clockIn: LocalDateTime = defaultClockIn,
+        clockOut: LocalDateTime = defaultClockOut,
+    ): Long {
+        val response = mockMvc.post("/api/shifts") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $token")
+            content = objectMapper.writeValueAsString(
+                createShiftRequest(userId = ownerId, clockIn = clockIn, clockOut = clockOut)
+            )
+        }.andReturn().response.contentAsString
+        return objectMapper.readTree(response)["id"].asLong()
+    }
+
+    @Test
+    fun `STAFF can PUT-replace their own DRAFT shift`() {
+        // Given: a DRAFT shift owned by the STAFF caller
+        val shiftId = createDraftShift(staffUserId, staffToken)
+
+        // When: STAFF PUTs a new time window (echoing their own userId)
+        mockMvc.put("/api/shifts/$shiftId") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                ReplaceShiftRequest(
+                    clockInTime  = LocalDateTime.of(2025, 1, 15, 10, 0),
+                    clockOutTime = LocalDateTime.of(2025, 1, 15, 18, 0),
+                    userId = staffUserId,
+                )
+            )
+        }.andExpect {
+            // Then: 200 with the merged values, status preserved as DRAFT
+            status { isOk() }
+            jsonPath("$.id") { value(shiftId) }
+            jsonPath("$.userId") { value(staffUserId) }
+            jsonPath("$.status") { value("DRAFT") }
+            jsonPath("$.clockInTime") { value("2025-01-15T10:00:00") }
+            jsonPath("$.clockOutTime") { value("2025-01-15T18:00:00") }
+        }
+    }
+
+    @Test
+    fun `STAFF cannot edit someone else's shift`() {
+        // Given: a DRAFT shift owned by ADMIN
+        val foreignId = createDraftShift(adminUserId, adminToken)
+
+        // When: STAFF tries to PATCH it
+        mockMvc.patch("/api/shifts/$foreignId") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                UpdateShiftRequest(clockInTime = LocalDateTime.of(2025, 1, 15, 11, 0))
+            )
+        }.andExpect {
+            // Then: 403 Forbidden (service-layer permission check)
+            status { isForbidden() }
+        }
+    }
+
+    @Test
+    fun `STAFF cannot edit a non-DRAFT shift`() {
+        // Given: STAFF's own shift, but already submitted
+        val shiftId = createDraftShift(staffUserId, staffToken)
+        mockMvc.post("/api/shifts/$shiftId/submit") {
+            header("Authorization", "Bearer $staffToken")
+        }
+
+        // When: STAFF tries to PATCH a SUBMITTED shift
+        mockMvc.patch("/api/shifts/$shiftId") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                UpdateShiftRequest(clockInTime = LocalDateTime.of(2025, 1, 15, 11, 0))
+            )
+        }.andExpect {
+            // Then: 403 — STAFF is locked out once the shift leaves DRAFT
+            status { isForbidden() }
+        }
+    }
+
+    @Test
+    fun `STAFF cannot reassign userId via PATCH`() {
+        // Given: STAFF's own DRAFT shift
+        val shiftId = createDraftShift(staffUserId, staffToken)
+
+        // When: STAFF tries to reassign ownership to ADMIN
+        mockMvc.patch("/api/shifts/$shiftId") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                UpdateShiftRequest(userId = adminUserId)
+            )
+        }.andExpect {
+            // Then: 403 — only ADMIN can reassign ownership
+            status { isForbidden() }
+        }
+    }
+
+    @Test
+    fun `ADMIN can edit an APPROVED shift and status is preserved`() {
+        // Given: a SUBMITTED then APPROVED shift owned by STAFF
+        val shiftId = createDraftShift(staffUserId, staffToken)
+        mockMvc.post("/api/shifts/$shiftId/submit") {
+            header("Authorization", "Bearer $staffToken")
+        }
+        mockMvc.post("/api/shifts/$shiftId/approve") {
+            header("Authorization", "Bearer $adminToken")
+        }
+
+        // When: ADMIN PATCHes only the clockOutTime
+        mockMvc.patch("/api/shifts/$shiftId") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $adminToken")
+            content = objectMapper.writeValueAsString(
+                UpdateShiftRequest(clockOutTime = LocalDateTime.of(2025, 1, 15, 19, 0))
+            )
+        }.andExpect {
+            // Then: 200 with status preserved as APPROVED, only clock-out changed
+            status { isOk() }
+            jsonPath("$.status") { value("APPROVED") }
+            jsonPath("$.clockOutTime") { value("2025-01-15T19:00:00") }
+            // clock-in unchanged from the original request
+            jsonPath("$.clockInTime") { value("2025-01-15T09:00:00") }
+        }
+    }
+
+    @Test
+    fun `ADMIN can reassign shift ownership via PATCH`() {
+        // Given: a DRAFT shift owned by STAFF
+        val shiftId = createDraftShift(staffUserId, staffToken)
+
+        // When: ADMIN reassigns to themselves
+        mockMvc.patch("/api/shifts/$shiftId") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $adminToken")
+            content = objectMapper.writeValueAsString(
+                UpdateShiftRequest(userId = adminUserId)
+            )
+        }.andExpect {
+            // Then: 200 with the new owner reflected
+            status { isOk() }
+            jsonPath("$.userId") { value(adminUserId) }
+        }
+    }
+
+    @Test
+    fun `PUT with invalid time range returns 400`() {
+        // Given: a DRAFT shift owned by the STAFF caller
+        val shiftId = createDraftShift(staffUserId, staffToken)
+
+        // When: STAFF PUTs an inverted clock-in / clock-out
+        mockMvc.put("/api/shifts/$shiftId") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                ReplaceShiftRequest(
+                    clockInTime  = LocalDateTime.of(2025, 1, 15, 18, 0),
+                    clockOutTime = LocalDateTime.of(2025, 1, 15, 10, 0),  // before clock-in
+                    userId = staffUserId,
+                )
+            )
+        }.andExpect {
+            // Then: 400 Bad Request (DTO @AssertTrue → MethodArgumentNotValidException)
+            status { isBadRequest() }
+        }
+    }
+
+    @Test
+    fun `PATCH with stale version returns 409`() {
+        // Given: a DRAFT shift owned by STAFF — version starts at 0
+        val shiftId = createDraftShift(staffUserId, staffToken)
+
+        // First PATCH succeeds, bumping version 0 → 1
+        mockMvc.patch("/api/shifts/$shiftId") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                UpdateShiftRequest(
+                    clockInTime = LocalDateTime.of(2025, 1, 15, 10, 0),
+                    version = 0L,
+                )
+            )
+        }.andExpect { status { isOk() } }
+
+        // When: STAFF replays a PATCH still claiming version 0
+        mockMvc.patch("/api/shifts/$shiftId") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = objectMapper.writeValueAsString(
+                UpdateShiftRequest(
+                    clockInTime = LocalDateTime.of(2025, 1, 15, 11, 0),
+                    version = 0L,
+                )
+            )
+        }.andExpect {
+            // Then: 409 Conflict — optimistic-lock pre-check fires before any write
+            status { isConflict() }
+        }
+    }
+
+    @Test
+    fun `PATCH with empty body returns 400`() {
+        val shiftId = createDraftShift(staffUserId, staffToken)
+
+        // When: STAFF PATCHes with no fields supplied
+        mockMvc.patch("/api/shifts/$shiftId") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Authorization", "Bearer $staffToken")
+            content = "{}"
+        }.andExpect {
+            // Then: 400 — DTO requires at least one editable field
+            status { isBadRequest() }
+        }
+    }
+
+    @Test
+    fun `STAFF can DELETE their own DRAFT shift`() {
+        // Given: a DRAFT shift owned by the STAFF caller
+        val shiftId = createDraftShift(staffUserId, staffToken)
+
+        // When: STAFF deletes it
+        mockMvc.delete("/api/shifts/$shiftId") {
+            header("Authorization", "Bearer $staffToken")
+        }.andExpect {
+            // Then: 204 No Content
+            status { isNoContent() }
+        }
+
+        // And: the shift is actually gone
+        mockMvc.get("/api/shifts/$shiftId") {
+            header("Authorization", "Bearer $staffToken")
+        }.andExpect {
+            // GlobalExceptionHandler maps "Shift not found" IllegalStateException → 409
+            status { isConflict() }
+        }
+    }
+
+    @Test
+    fun `STAFF cannot DELETE a non-DRAFT shift`() {
+        // Given: STAFF's shift, already submitted
+        val shiftId = createDraftShift(staffUserId, staffToken)
+        mockMvc.post("/api/shifts/$shiftId/submit") {
+            header("Authorization", "Bearer $staffToken")
+        }
+
+        // When: STAFF tries to delete a SUBMITTED shift
+        mockMvc.delete("/api/shifts/$shiftId") {
+            header("Authorization", "Bearer $staffToken")
+        }.andExpect {
+            // Then: 403 Forbidden
+            status { isForbidden() }
+        }
+    }
+
+    @Test
+    fun `STAFF cannot DELETE someone else's shift`() {
+        // Given: a DRAFT shift owned by ADMIN
+        val foreignId = createDraftShift(adminUserId, adminToken)
+
+        // When: STAFF tries to delete it
+        mockMvc.delete("/api/shifts/$foreignId") {
+            header("Authorization", "Bearer $staffToken")
+        }.andExpect {
+            // Then: 403 — IDOR defence
+            status { isForbidden() }
+        }
+    }
+
+    @Test
+    fun `ADMIN can force-delete an APPROVED shift`() {
+        // Given: a STAFF shift fully approved
+        val shiftId = createDraftShift(staffUserId, staffToken)
+        mockMvc.post("/api/shifts/$shiftId/submit") {
+            header("Authorization", "Bearer $staffToken")
+        }
+        mockMvc.post("/api/shifts/$shiftId/approve") {
+            header("Authorization", "Bearer $adminToken")
+        }
+
+        // When: ADMIN deletes it
+        mockMvc.delete("/api/shifts/$shiftId") {
+            header("Authorization", "Bearer $adminToken")
+        }.andExpect {
+            // Then: 204 — ADMIN bypasses the status gate
+            status { isNoContent() }
+        }
+    }
 }
+
 

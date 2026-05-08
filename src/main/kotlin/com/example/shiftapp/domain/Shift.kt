@@ -13,6 +13,13 @@ import java.time.LocalTime
  *
  * Invariants:
  *  - `clockOutTime` must be strictly after `clockInTime`
+ *
+ * Concurrency:
+ *  - [version] is a JPA `@Version` field. Hibernate auto-increments it on every
+ *    UPDATE and refuses to apply an UPDATE whose `version` no longer matches the
+ *    DB row, raising `OptimisticLockingFailureException` (mapped to HTTP 409 by
+ *    the global exception handler). Callers can supply the version they read in
+ *    `PUT /api/shifts/{id}` to defend against lost updates between two editors.
  */
 @Entity
 @Table(name = "shifts")
@@ -33,7 +40,12 @@ data class Shift(
 
     @Column(name = "clock_out_time", nullable = false)
     val clockOutTime: LocalDateTime,
+
+    @Version
+    @Column(nullable = false)
+    val version: Long = 0L,
 ) {
+
     init {
         require(clockOutTime.isAfter(clockInTime)) {
             "Clock-out time must be after clock-in time (was $clockInTime - $clockOutTime)"

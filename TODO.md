@@ -34,13 +34,21 @@ ADMIN が「来週の月〜金、Aさんを 9:00–18:00 で」みたいに一�
 
 ---
 
-### 2. シフト編集 / 削除 (`PUT` / `DELETE /api/shifts/{id}`)
+### 2. シフト編集 / 削除 (`PUT` / `PATCH` / `DELETE /api/shifts/{id}`) ✅ 完了
 
-TODO.md にも残っている宿題。bulk より先に普通の単体編集が無いと、bulk で作って間違えたシフトを直せません。
+実装内容:
 
-- 編集可能フィールド: `clockInTime`, `clockOutTime`, `userId`（オーナー差し替え）
-- ステータス遷移済み（APPROVED 等）の編集をどう扱うかをポリシー化:
-  - ADMIN は強制編集可、STAFF は DRAFT のみ編集可、など。
+- `PUT /api/shifts/{id}` … 編集可能フィールド (`clockInTime`/`clockOutTime`/`userId`) を全指定して置換 (`ReplaceShiftRequest`)。
+- `PATCH /api/shifts/{id}` … 部分更新 (`UpdateShiftRequest`)。最低 1 フィールド必須。
+- `DELETE /api/shifts/{id}` … ハード削除（必要になれば soft-delete に切替）。
+- 権限マトリクス（`ShiftService.updateShift` / `deleteShift` で実施）:
+  - STAFF: 自分の DRAFT のみ編集・削除可。`userId` の付け替えは禁止（IDOR 防御）。
+  - ADMIN: 任意の状態を強制編集・削除可。`userId` の付け替えも可。
+  - 編集してもステータスは保たれる（lifecycle は `/submit` `/approve` `/reject` 専用）。
+- 楽観ロック: `Shift.@Version` + リクエスト body の `version` で事前チェック。
+  ズレていれば 409 を返してから書き込み無し。送らなければ flush 時に Hibernate がバックストップ。
+- 例外マッピング: `AccessDeniedException → 403`, `OptimisticLockingFailureException → 409` を `GlobalExceptionHandler` に追加。
+- 統合テスト: PUT/PATCH/DELETE × ロール × ステータス × バージョン衝突 を `ShiftControllerIntegrationTest` に追加（全 132 件 green）。
 
 ### 3. シフトテンプレート (Shift Template)
 

@@ -10,13 +10,17 @@ import com.example.shiftapp.dto.response.SkippedSubmit
 import com.example.shiftapp.dto.response.SkippedSubmitReason
 import com.example.shiftapp.repository.ShiftRepository
 import com.example.shiftapp.repository.ShiftSpecifications
+import com.example.shiftapp.security.AuthenticatedUser
+import org.springframework.dao.OptimisticLockingFailureException
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Sort
+import org.springframework.security.access.AccessDeniedException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
+
 
 
 /**
@@ -165,8 +169,150 @@ class ShiftService(
     }
 
     // -----------------------------------------------------------------
+    // Edit / delete (TODO §2)
+    // -----------------------------------------------------------------
+
+    /**
+     * Apply a (possibly partial) update to an existing shift.
+     *
+     * The two HTTP entry points — `PUT /api/shifts/{id}` (full replace) and
+     * `PATCH /api/shifts/{id}` (partial update) — both funnel through here so
+     * the permission matrix and optimistic-lock check live in one place. PUT
+     * just supplies every editable field; PATCH supplies a subset and we
+     * merge against the persisted shift.
+     *
+     * Permission matrix:
+     *
+     *  | Role  | DRAFT | SUBMITTED | APPROVED | REJECTED |
+     *  |-------|:-----:|:---------:|:--------:|:--------:|
+     *  | STAFF |  own  |    ❌     |    ❌    |    ❌    |
+     *  | ADMIN |  any  |    any    |   any    |   any    |
+     *
+     *  Reassigning [newUserId] is **ADMIN-only** regardless of status — STAFF
+     *  callers may either omit it or echo the existing owner; any other value
+     *  is a permission violation (defends against IDOR via PUT).
+     *
+     * Status preservation:
+     *  Editing a shift never changes its [ShiftStatus]. An ADMIN editing an
+     *  APPROVED shift gets back an APPROVED shift; lifecycle transitions stay
+     *  with the explicit `/submit`, `/approve`, `/reject` endpoints. (If we
+     *  later decide that editing an APPROVED shift should bounce it back to
+     *  DRAFT, this is the single place to add that rule.)
+     *
+     * Optimistic concurrency:
+     *  When [expectedVersion] is non-null and disagrees with the persisted
+     *  row's version, we throw [OptimisticLockingFailureException] *before*
+     *  any write — clients get a deterministic 409 instead of a flush-time
+     *  surprise. JPA's `@Version` column still acts as a backstop at SQL
+     *  flush in case the caller skipped this check.
+     *
+     * @throws IllegalStateException             shift not found
+     * @throws AccessDeniedException             permission matrix violation
+     * @throws OptimisticLockingFailureException [expectedVersion] stale
+     * @throws IllegalArgumentException          merged time range invalid
+     */
+    @Transactional
+    fun updateShift(
+        shiftId: Long,
+        principal: AuthenticatedUser,
+        newClockInTime: LocalDateTime? = null,
+        newClockOutTime: LocalDateTime? = null,
+        newUserId: Long? = null,
+        expectedVersion: Long? = null,
+    ): Shift {
+        val shift = shiftRepository.findById(shiftId)
+            .orElseThrow { IllegalStateException("Shift not found: $shiftId") }
+
+        // ---- Permission gate ----------------------------------------------------
+        val isAdmin = principal.role == "ADMIN"
+        val isOwner = shift.userId == principal.userId
+        if (!isAdmin) {
+            if (!isOwner) {
+                throw AccessDeniedException("You can only edit your own shifts")
+            }
+            if (shift.status != ShiftStatus.DRAFT) {
+                throw AccessDeniedException(
+                    "STAFF can only edit DRAFT shifts (was ${shift.status})"
+                )
+            }
+            // STAFF must not be reassigning ownership. Echoing the same userId
+            // is fine; any other value is treated as an attempted reassign.
+            if (newUserId != null && newUserId != shift.userId) {
+                throw AccessDeniedException("Only ADMIN can reassign shift ownership")
+            }
+        }
+
+        // ---- Optimistic lock (early check) -------------------------------------
+        if (expectedVersion != null && expectedVersion != shift.version) {
+            throw OptimisticLockingFailureException(
+                "Shift $shiftId has been modified by someone else " +
+                        "(expected version $expectedVersion, was ${shift.version})"
+            )
+        }
+
+        // ---- Merge ---------------------------------------------------------------
+        val mergedClockIn = newClockInTime ?: shift.clockInTime
+        val mergedClockOut = newClockOutTime ?: shift.clockOutTime
+        val mergedUserId = newUserId ?: shift.userId
+
+        // Quick no-op: nothing actually changed → skip the write so we don't
+        // bump the @Version for free and confuse concurrent editors.
+        if (mergedClockIn == shift.clockInTime &&
+            mergedClockOut == shift.clockOutTime &&
+            mergedUserId == shift.userId
+        ) {
+            return shift
+        }
+
+        // The Shift `init` block re-validates `clockOut > clockIn` — it surfaces
+        // as IllegalArgumentException → 400 via GlobalExceptionHandler.
+        val updated = shift.copy(
+            clockInTime = mergedClockIn,
+            clockOutTime = mergedClockOut,
+            userId = mergedUserId,
+        )
+
+        return shiftRepository.save(updated)
+    }
+
+    /**
+     * Delete a shift.
+     *
+     * Permission matrix mirrors [updateShift]:
+     *  - STAFF can delete only their own DRAFT shifts.
+     *  - ADMIN can delete any shift in any status.
+     *
+     * Hard delete for now; if/when we need an audit trail, swap to a soft-delete
+     * column or a separate `shift_deletions` event log.
+     *
+     * @throws IllegalStateException shift not found
+     * @throws AccessDeniedException permission matrix violation
+     */
+    @Transactional
+    fun deleteShift(shiftId: Long, principal: AuthenticatedUser) {
+        val shift = shiftRepository.findById(shiftId)
+            .orElseThrow { IllegalStateException("Shift not found: $shiftId") }
+
+        val isAdmin = principal.role == "ADMIN"
+        val isOwner = shift.userId == principal.userId
+        if (!isAdmin) {
+            if (!isOwner) {
+                throw AccessDeniedException("You can only delete your own shifts")
+            }
+            if (shift.status != ShiftStatus.DRAFT) {
+                throw AccessDeniedException(
+                    "STAFF can only delete DRAFT shifts (was ${shift.status})"
+                )
+            }
+        }
+
+        shiftRepository.delete(shift)
+    }
+
+    // -----------------------------------------------------------------
     // Bulk operations
     // -----------------------------------------------------------------
+
 
     /**
      * Create many DRAFT shifts for [userId] in one transaction.
