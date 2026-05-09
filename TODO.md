@@ -4,33 +4,40 @@
 
 ## 🥇 優先度: 高（運用に入る前にほぼ必須）
 
-### 1. シフト一括作成 (Bulk Create) — ご提案の機能
+### 1. シフト一括作成 (Bulk Create) ✅ 完了
 
-ADMIN が「来週の月〜金、Aさんを 9:00–18:00 で」みたいに一気に積めるエンドポイント。
+実装内容:
 
-- **API 案**
-  - `POST /api/shifts/bulk`（ADMIN only）
-  - リクエスト例:
-    ```jsonc
-    {
-      "userId": 12,
-      "startDate": "2026-05-04",
-      "endDate": "2026-05-08",
-      "daysOfWeek": ["MON", "TUE", "WED", "THU", "FRI"],
-      "clockInLocalTime": "09:00",
-      "clockOutLocalTime": "18:00",
-      "status": "APPROVED", // 一括投入時は最初から承認、も選べる
-      "skipOverlapping": true, // 既存と重複する日はスキップ
-    }
-    ```
-  - レスポンス: `{ created: ShiftResponse[], skipped: { date, reason }[] }`
-- **派生バージョン**
-  - `POST /api/shifts/bulk/explicit`: 日時を配列で渡す版（`shifts: [{userId, clockIn, clockOut}, ...]`）。CSV インポートやテンプレート展開で使う。
-  - `POST /api/shifts/bulk/from-template`: 後述「シフトテンプレート」と組み合わせる。
-- **設計上のポイント**
-  - 1 トランザクションでまとめて `saveAll`、エラーは「全部ロールバック」or「部分成功＋エラー一覧」を選べるオプション (`atomic: true|false`)
-  - 重複チェックは `Shift.isOverlapping` を再利用、ユーザー × 期間で既存シフトを 1 クエリで取得して in-memory 判定（N+1 を避ける）
-  - `daysOfWeek` を絞り込みつつ祝日除外オプション (`excludeHolidays`) も将来追加余地
+- `POST /api/shifts/bulk` … 認証済みユーザー（STAFF / ADMIN）が **自分自身** に対して期間 × 曜日でまとめて DRAFT シフトを生成。所有者は JWT principal (`AuthenticatedUser.userId`) から取り、リクエストボディには含めない（`/api/shifts/me` 系と同じ IDOR 防御方針）。
+- `PATCH /api/shifts/bulk/submit` … 自分が所有する DRAFT シフトを ID 配列で一括 submit（DRAFT → SUBMITTED）。所有者・ステータス・存在を ID 単位でチェックし、弾いたものは型付き理由とともに `skipped` で返す（part of TODO §2 とは別レイヤーの一括 lifecycle 操作）。
+- リクエスト例（`POST /api/shifts/bulk`）:
+  ```jsonc
+  {
+    "startDate": "2026-05-04",
+    "endDate": "2026-05-08",
+    "daysOfWeek": ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"], // 省略すると毎日
+    "clockInLocalTime": "09:00",
+    "clockOutLocalTime": "18:00",
+    "skipOverlapping": true, // false にすると重複時は即 409
+    "atomic": false, // true なら 1 件でも skip 候補があれば全ロールバック
+  }
+  ```
+  レスポンス: `{ created: ShiftResponse[], skipped: { date, reason: "OVERLAPPING_EXISTING_SHIFT" | ... }[] }`（`201 Created`）
+- リクエスト例（`PATCH /api/shifts/bulk/submit`）:
+  ```jsonc
+  { "shiftIds": [101, 102, 103], "atomic": false }
+  ```
+  レスポンス: `{ submitted: ShiftResponse[], skipped: { shiftId, reason: "NOT_FOUND" | "NOT_OWNED_BY_REQUESTER" | "INVALID_STATUS_TRANSITION" }[] }`（`200 OK`）
+- 設計上のポイント（実装で押さえたところ）:
+  - `Shift.isOverlapping()` をドメインから再利用し、`ShiftRepository.findAllByUserIdAndClockInTimeBetween` で **期間 × ユーザー** の既存シフトを 1 クエリ取得 → in-memory 判定で N+1 を回避。
+  - `@Transactional` + `atomic` フラグで「全部ロールバック」or「部分成功＋skipped 一覧」を切替可能。`atomic=true` で skip 候補が出た場合は `IllegalStateException` を投げて `GlobalExceptionHandler` が 409 にマップ。
+  - `created` / `skipped`、`submitted` / `skipped` を分けて返すので、フロントは「どこを赤くハイライトしてリトライさせるか」を型情報だけで決められる。
+- テスト: `ShiftServiceTest`（mockk で隔離した bulkCreate / bulkSubmit のロジック）+ `ShiftControllerIntegrationTest`（成功 / overlap skip / atomic ロールバック / 他人の shift 拒否 / 未認証 403 などの end-to-end）を追加。
+- スコープ外（将来タスクのまま残す）:
+  - `POST /api/shifts/bulk/explicit` … 日時を配列で渡す版（CSV インポートで使用予定）。
+  - `POST /api/shifts/bulk/from-template` … §3「シフトテンプレート」と組み合わせる版。
+  - **ADMIN が他人の shift を一括で積む** ユースケース（元の TODO の `userId` をボディで受ける案）。必要になれば `POST /api/admin/shifts/bulk` として別途生やす想定（`AdminController` に隔離して権限判定を絶対化する）。
+  - `excludeHolidays` 等の祝日カレンダー連携。
 
 ---
 
