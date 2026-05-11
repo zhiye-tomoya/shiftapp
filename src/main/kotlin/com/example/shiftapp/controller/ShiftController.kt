@@ -3,6 +3,7 @@ package com.example.shiftapp.controller
 import com.example.shiftapp.domain.Shift
 import com.example.shiftapp.domain.ShiftStatus
 import com.example.shiftapp.dto.mapper.toResponse
+import com.example.shiftapp.dto.request.ApplyShiftTemplateRequest
 import com.example.shiftapp.dto.request.BulkCreateShiftRequest
 import com.example.shiftapp.dto.request.BulkSubmitShiftRequest
 import com.example.shiftapp.dto.request.CreateShiftRequest
@@ -15,6 +16,7 @@ import com.example.shiftapp.dto.response.PageResponse
 import com.example.shiftapp.dto.response.ShiftResponse
 import com.example.shiftapp.security.AuthenticatedUser
 import com.example.shiftapp.service.ShiftService
+import com.example.shiftapp.service.ShiftTemplateService
 import jakarta.validation.Valid
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Sort
@@ -46,7 +48,8 @@ import java.time.LocalDateTime
 @RestController
 @RequestMapping("/api/shifts")
 class ShiftController(
-    private val shiftService: ShiftService
+    private val shiftService: ShiftService,
+    private val shiftTemplateService: ShiftTemplateService,
 ) {
 
     /**
@@ -316,6 +319,38 @@ class ShiftController(
     ): ResponseEntity<BulkSubmitShiftResponse> {
         val outcome = shiftService.bulkSubmit(principal.userId, request)
         return ResponseEntity.ok(outcome.toResponse())
+    }
+
+    /**
+     * Materialise a [com.example.shiftapp.domain.ShiftTemplate] into concrete
+     * DRAFT shifts across `[startDate, endDate]` for the **caller** (TODO §3).
+     *
+     * Sits next to `POST /api/shifts/bulk` and `PATCH /api/shifts/bulk/submit`
+     * so a frontend writing "create a week of shifts" learns one base URL.
+     * The shift owner is taken from the JWT principal — STAFF can never
+     * apply a template on behalf of someone else (IDOR defence).
+     *
+     * Visibility of the referenced template is enforced server-side:
+     *  - global templates → anyone may apply
+     *  - personal templates → only the owner (or ADMIN)
+     *
+     * Reuses `POST /api/shifts/bulk`'s partial-success semantics: the
+     * response is identical (`created` / `skipped`), and `atomic = true`
+     * triggers a 409 + full rollback on any skip.
+     *
+     * Responses:
+     *  - 201 Created with [BulkCreateShiftResponse]
+     *  - 403 if the caller cannot see the referenced template
+     *  - 409 if not found, atomic-mode skip, or any other state conflict
+     */
+    @PostMapping("/bulk/from-template")
+    @PreAuthorize("isAuthenticated()")
+    fun bulkCreateFromTemplate(
+        @Valid @RequestBody request: ApplyShiftTemplateRequest,
+        @AuthenticationPrincipal principal: AuthenticatedUser,
+    ): ResponseEntity<BulkCreateShiftResponse> {
+        val outcome = shiftTemplateService.apply(request, principal)
+        return ResponseEntity.status(HttpStatus.CREATED).body(outcome.toResponse())
     }
 }
 

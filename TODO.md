@@ -57,13 +57,62 @@
 - 例外マッピング: `AccessDeniedException → 403`, `OptimisticLockingFailureException → 409` を `GlobalExceptionHandler` に追加。
 - 統合テスト: PUT/PATCH/DELETE × ロール × ステータス × バージョン衝突 を `ShiftControllerIntegrationTest` に追加（全 132 件 green）。
 
-### 3. シフトテンプレート (Shift Template)
+### 3. シフトテンプレート (Shift Template) ✅ 完了
 
-「平日 9-18」「土日 10-22」のような _時間帯テンプレ_ を保存しておき、bulk 作成や個別作成のプリセットとして使う。
+実装内容:
 
-- 新エンティティ `ShiftTemplate { id, name, clockInLocalTime, clockOutLocalTime, daysOfWeek, role/タグ }`
-- `POST /api/shifts/bulk/from-template { templateId, userId, startDate, endDate }`
-- UI 側のシフト入力が劇的に楽になる。
+- 新エンティティ `ShiftTemplate { id, name, clockInLocalTime, clockOutLocalTime, daysOfWeek, roleTag, ownerId, version }`
+  - `daysOfWeek` は `@ElementCollection`（`shift_template_days` テーブル）。
+  - `ownerId == null` = **共有テンプレ**（ADMIN のみ作成・編集）、`ownerId == <userId>` = **個人テンプレ**（本人＋ADMIN のみ編集）。
+  - ドメイン invariants: `clockOut > clockIn` / `daysOfWeek` 非空 / `name` 非空白。`@Version` で楽観ロック。
+- CRUD エンドポイント（`/api/shift-templates`、全認証必須）:
+  - `GET /api/shift-templates` … 自分のテンプレ＋共有テンプレを `name ASC` で返す。
+  - `GET /api/shift-templates/{id}` … 個人テンプレは所有者＋ADMIN のみ閲覧可。
+  - `POST /api/shift-templates` … STAFF は個人テンプレのみ。`shared=true` は STAFF だと **silent downgrade**（フロントが UI を出し忘れた時の安全側）。ADMIN のみ `shared=true` で共有テンプレ作成可。
+  - `PATCH /api/shift-templates/{id}` … 部分更新＋楽観ロック（`version`）。STAFF は **自分の個人テンプレのみ**、ADMIN は任意。
+  - `DELETE /api/shift-templates/{id}` … 同上の権限マトリクス。既存シフトは template ID を保持していないので影響なし。
+- 適用エンドポイント:
+  - `POST /api/shifts/bulk/from-template { templateId, startDate, endDate, skipOverlapping?, atomic? }`
+  - 所有者は **JWT principal 固定**（STAFF が他人に展開できない、bulk-create と同じ IDOR 防御方針）。
+  - 中身は `ShiftTemplateService.apply` → `ShiftService.bulkCreate` に委譲して、重複検出 / atomic ロールバック / partial-success レスポンスを **§1 と完全に共有**（同じ `BulkCreateShiftResponse`）。
+- リクエスト例（`POST /api/shift-templates`）:
+  ```jsonc
+  {
+    "name": "平日 9-18",
+    "clockInLocalTime": "09:00",
+    "clockOutLocalTime": "18:00",
+    "daysOfWeek": ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
+    "roleTag": "ホール", // 任意の自由タグ。§15 で `position` 専用 FK に昇格予定。
+    "shared": false, // ADMIN のみ true 可（STAFF は silently false に矯正）
+  }
+  ```
+- リクエスト例（`POST /api/shifts/bulk/from-template`）:
+  ```jsonc
+  {
+    "templateId": 7,
+    "startDate": "2026-05-04",
+    "endDate": "2026-05-08",
+    "skipOverlapping": true,
+    "atomic": false,
+  }
+  ```
+  レスポンス: `BulkCreateShiftResponse`（§1 と同形 — `created[]` / `skipped[]`、201 Created）。
+- 権限マトリクス（実装で押さえた表）:
+
+  | Op            | STAFF                    | ADMIN        |
+  | ------------- | ------------------------ | ------------ |
+  | list          | 自分 + 共有              | 自分 + 共有  |
+  | get(id)       | 自分 + 共有              | 任意         |
+  | create        | 個人のみ（ownerId=自分） | 個人 or 共有 |
+  | update/delete | 自分の個人テンプレのみ   | 任意         |
+  | apply         | 閲覧可能な任意テンプレ   | 同左         |
+
+- テスト: `ShiftTemplateTest`（ドメイン invariants）+ `ShiftTemplateControllerIntegrationTest`（CRUD × ロール × 共有/個人、PATCH の merged-time バリデーション、楽観ロック衝突、apply 経由の bulk 結合、未認証 403 …計 18 ケース）を追加。全 155 件 green。
+- スコープ外（将来タスク）:
+  - **個人 → 共有への昇格（あるいは逆）** の専用エンドポイント。PATCH に混ぜると権限昇格パスが増えるので分離する想定。
+  - **ADMIN が他人のために apply** するユースケース（`POST /api/admin/shifts/bulk/from-template` として §1 のADMIN 版と一緒に追加予定）。
+  - 「テンプレから生成されたシフトであることを保持する `sourceTemplateId`」… 監査ログ (§13) と一緒に検討。
+  - `roleTag` の自由文字列 → §15「`position` / `role` / `skill` タグ」で正規化される時に FK 化。
 
 ### 4. シフト確定（公開）フロー
 
