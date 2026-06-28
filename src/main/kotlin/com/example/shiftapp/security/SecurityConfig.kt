@@ -10,6 +10,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
+import org.springframework.web.cors.CorsConfigurationSource
 
 /**
  * Spring Security Configuration.
@@ -29,7 +30,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableWebSecurity
 @EnableMethodSecurity(prePostEnabled = true)  // Enables @PreAuthorize annotations
 class SecurityConfig(
-    private val jwtAuthenticationFilter: JwtAuthenticationFilter
+    private val jwtAuthenticationFilter: JwtAuthenticationFilter,
+    private val corsConfigurationSource: CorsConfigurationSource,
 ) {
 
     /**
@@ -43,6 +45,11 @@ class SecurityConfig(
     @Bean
     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
         http
+            // Enable CORS using the CorsConfigurationSource bean (CorsConfig).
+            // Required so the Next.js front-end (Vercel) can call this API from
+            // a different origin, including sending the refresh-token cookie.
+            .cors { it.configurationSource(corsConfigurationSource) }
+
             // Disable CSRF (Cross-Site Request Forgery)
             // We don't need it because JWT tokens can't be stolen via CSRF attacks
             .csrf { it.disable() }
