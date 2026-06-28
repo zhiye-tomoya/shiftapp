@@ -123,6 +123,57 @@ class ShiftTest {
         assertEquals(ShiftStatus.REJECTED, rejected.status)
     }
 
+    // ===== publish() — APPROVED → PUBLISHED (TODO §4) =====
+
+    @Test
+    fun `should change status to PUBLISHED when publish is called on APPROVED shift`() {
+        val shift = shift(status = ShiftStatus.APPROVED)
+        val published = shift.publish()
+        assertEquals(ShiftStatus.PUBLISHED, published.status)
+    }
+
+    @Test
+    fun `should throw exception when publish is called on DRAFT shift`() {
+        val shift = shift(status = ShiftStatus.DRAFT)
+        assertThrows<IllegalStateException> {
+            shift.publish()
+        }
+    }
+
+    @Test
+    fun `should throw exception when publish is called on SUBMITTED shift`() {
+        val shift = shift(status = ShiftStatus.SUBMITTED)
+        assertThrows<IllegalStateException> {
+            shift.publish()
+        }
+    }
+
+    @Test
+    fun `should throw exception when publish is called on REJECTED shift`() {
+        val shift = shift(status = ShiftStatus.REJECTED)
+        assertThrows<IllegalStateException> {
+            shift.publish()
+        }
+    }
+
+    @Test
+    fun `should throw exception when publish is called on already PUBLISHED shift`() {
+        // Re-publishing is explicitly disallowed so the future "schedule
+        // published" event isn't accidentally emitted twice.
+        val shift = shift(status = ShiftStatus.PUBLISHED)
+        assertThrows<IllegalStateException> {
+            shift.publish()
+        }
+    }
+
+    @Test
+    fun `publish should not mutate original shift`() {
+        val original = shift(status = ShiftStatus.APPROVED)
+        val published = original.publish()
+        assertEquals(ShiftStatus.APPROVED, original.status)
+        assertEquals(ShiftStatus.PUBLISHED, published.status)
+    }
+
     // ===== Clock-in / clock-out invariant tests =====
 
     @Test

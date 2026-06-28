@@ -108,4 +108,24 @@ data class Shift(
         }
         return copy(status = ShiftStatus.REJECTED)
     }
+
+    /**
+     * Publish an APPROVED shift.
+     *
+     * Driven by the monthly publish flow (`POST /api/schedules/{yyyy-MM}/publish`).
+     * Only APPROVED shifts are eligible — DRAFT/SUBMITTED have not yet been
+     * blessed by an ADMIN, and re-publishing an already-PUBLISHED shift would
+     * silently double-emit any future "schedule published" notifications, so we
+     * make the no-op explicit and let the orchestrator skip it with a typed
+     * reason instead.
+     *
+     * @return A new Shift instance with PUBLISHED status
+     * @throws IllegalStateException if the shift is not in APPROVED status
+     */
+    fun publish(): Shift {
+        check(status == ShiftStatus.APPROVED) {
+            "Only APPROVED shifts can be published (was $status)"
+        }
+        return copy(status = ShiftStatus.PUBLISHED)
+    }
 }

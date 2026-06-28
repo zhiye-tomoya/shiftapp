@@ -114,13 +114,46 @@
   - 「テンプレから生成されたシフトであることを保持する `sourceTemplateId`」… 監査ログ (§13) と一緒に検討。
   - `roleTag` の自由文字列 → §15「`position` / `role` / `skill` タグ」で正規化される時に FK 化。
 
-### 4. シフト確定（公開）フロー
+### 4. シフト確定（公開）フロー ✅ 完了
 
-今は DRAFT → SUBMITTED → APPROVED だが、「**月のシフト表として確定して全員に公開**」というステップが無い。
+実装内容:
 
-- 新ステータス `PUBLISHED`、または `ShiftSchedule`（月単位の集約）エンティティを導入
-- `POST /api/schedules/{yyyy-MM}/publish` で「その月の APPROVED シフトをまとめて公開」
-- 公開後の編集は版管理 or イベントログ
+- 新ステータス `PUBLISHED` を `ShiftStatus` に追加。遷移は **APPROVED → PUBLISHED** の一方向（`Shift.publish()` ドメインメソッドで `check(status == APPROVED)`）。再 publish は `IllegalStateException` で弾くので、将来「公開通知」を生やしたときに二重発火しない。
+- 新コントローラ `SchedulesController` を `/api/schedules` 配下に隔離（`ShiftController` の責務肥大化を避けるため）。エンドポイントは 2 本:
+  - `POST /api/schedules/{yyyy-MM}/publish` … ADMIN 限定。その月の APPROVED シフトを全員ぶんまとめて PUBLISHED に flip。ボディは省略可で、`{ "atomic": true }` を付けると 1 件でも skip 候補があれば全ロールバック（409）。レスポンスは §1/§2 と揃えた `{ yearMonth, published[], skipped[] }`。
+  - `GET /api/schedules/{yyyy-MM}` … 認証ユーザー全員可。`{ yearMonth, draft, submitted, approved, rejected, published, total }` の status ヒストグラム。公開確認 UI / STAFF のサマリーバッジ用。
+- 月境界は `clockInTime` 基準の **半開区間 `[yyyy-MM-01 00:00, 翌月-01 00:00)`**（bulk-create / ADMIN list と同じ規約）。4 月末 23:59:59 と 6 月 1 日 00:00:00 のシフトを混ぜたテストで境界を担保。
+- ドメインを別アグリゲート（`ShiftSchedule`）にせず **`Shift.status` を真の source of truth に保つ** 設計を採用:
+  - 既存の filter / 一覧 / RBAC パスがそのまま `PUBLISHED` を扱える。
+  - 別テーブルとの同期コードを書かなくて済む。
+  - 監査ログ（§13）が要るタイミングで `ShiftSchedule` を「上に」乗せれば足りる。今の段階では YAGNI。
+- 部分成功 / atomic 周りは §1（bulk-create）と完全同形:
+  - 通常は `skipped` 配列に型付き理由 (`SkippedPublishReason.INVALID_STATUS_TRANSITION`) を入れて 200 を返す（spec で既に APPROVED に絞り込まれているため通常は空。並行で別ロールが status を変えていた場合の defensive guard としてだけ機能する）。
+  - `atomic=true` は `IllegalStateException` → `GlobalExceptionHandler` で 409 にマップ。
+- `yyyy-MM` のパスバリデーションは `YearMonth.parse` を try/catch して `IllegalArgumentException` に変換 → 400。`2025-13` や `not-a-month` で確認済み。
+- 編集権限の整合: 既存 `ShiftService.updateShift` / `deleteShift` の STAFF ゲートは `status != DRAFT` を弾く設計なので、`PUBLISHED` シフトは STAFF からは自動的に編集・削除不可。ADMIN は引き続き任意状態を強制編集可（§2 のマトリクスを維持）。公開後の編集に「再 publish 必須」を要求するかは将来課題（監査ログ §13 と一緒に検討）。
+- リクエスト例（`POST /api/schedules/2025-05/publish`）:
+  ```jsonc
+  // ボディ省略可。atomic=true で全ロールバック動作。
+  { "atomic": false }
+  ```
+  レスポンス（200 OK）:
+  ```jsonc
+  {
+    "yearMonth": "2025-05",
+    "published": [
+      { "id": 101, "userId": 7, "status": "PUBLISHED", "clockInTime": "...", "clockOutTime": "..." }
+    ],
+    "skipped": [] // 並行編集で APPROVED から外れたものがある場合のみ埋まる
+  }
+  ```
+- テスト: `ShiftTest`（`publish()` ドメイン invariants 6 ケース追加）+ `ScheduleServiceTest`（mockk で隔離: 月レンジ展開 / status filter / partial skip / atomic / summary 集計）+ `SchedulesControllerIntegrationTest`（RBAC / yyyy-MM パース / 境界 / DRAFT-SUBMITTED-REJECTED-PUBLISHED の skip / summary を STAFF からも叩ける ことの確認 …計 11 ケース）。**全 179 件 green**。
+- スコープ外（将来タスクのまま残す）:
+  - **公開済みシフトを「unpublish」する逆遷移**。冪等な公開フローでよく欲しくなるが、`PUBLISHED → APPROVED` を許すと §13 の監査ログが要るので分離。
+  - **`POST /api/schedules/{yyyy-MM}/publish?userId=…`** … 特定スタッフだけ先行公開するユースケース。
+  - **公開イベント発火**（`SchedulePublished` ドメインイベント → §8 通知）。
+  - **公開後の編集を DRAFT に戻すルール**（"editing a PUBLISHED shift requires re-publishing"）。今はサイレントに `PUBLISHED` のまま保持。
+  - **`ShiftSchedule` アグリゲート**（誰がいつ publish したかの履歴・版管理）。§13 の監査ログと一緒に導入予定。
 
 ### 5. 自分のシフトを一覧 (`GET /api/shifts/me`)
 

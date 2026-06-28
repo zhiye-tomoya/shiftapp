@@ -36,6 +36,11 @@ out/
 ### VS Code ###
 .vscode/
 
+### Env / secrets ###
+.env
+.env.local
+!.env.example
+
 ### Kotlin ###
 .kotlin
 notes.md
