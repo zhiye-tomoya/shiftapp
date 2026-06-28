@@ -1,0 +1,22 @@
+# Build output (rebuilt inside the image)
+build/
+bin/
+out/
+
+# IDE / tooling
+.idea/
+.vscode/
+.gradle/
+.kotlin/
+
+# VCS
+.git/
+.github/
+
+# Secrets / local env — never copy into the image
+.env
+.env.local
+
+# Docs / notes (not needed at build time)
+*.md
+notes.md/
